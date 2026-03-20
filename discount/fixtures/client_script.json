@@ -1,0 +1,9 @@
+[
+  {
+    "doctype": "Client Script",
+    "name": "Layby Sales Order",
+    "dt": "Sales Order",
+    "enabled": 1,
+    "script": "frappe.ui.form.on(\"Sales Order\", {\n    after_save: function(frm) {\n        var isLayby = window.location.search.indexOf(\"layby=1\") > -1;\n        if (!isLayby) return;\n\n        var grand_total = frm.doc.grand_total || 0;\n        var items = frm.doc.items || [];\n        var lines = [\n            \"=============================\",\n            \"         LAYBY RECEIPT       \",\n            \"=============================\",\n            \"Order     : \" + frm.doc.name,\n            \"Date      : \" + frm.doc.transaction_date,\n            \"Customer  : \" + (frm.doc.customer_name || frm.doc.customer || \"Walk-in\"),\n            \"-----------------------------\",\n            \"ITEMS:\",\n        ];\n        items.forEach(function(i) {\n            lines.push(\"  \" + i.item_name + \" x\" + i.qty + \"  @  \" + i.rate + \"  =  \" + i.amount);\n        });\n        lines = lines.concat([\n            \"-----------------------------\",\n            \"TOTAL     : \" + frm.doc.currency + \" \" + grand_total,\n            \"=============================\",\n            \"  Thank you for your Layby!  \",\n            \"  Please keep this receipt.  \",\n            \"=============================\",\n        ]);\n\n        var blob = new Blob([lines.join(\"\\n\")], { type: \"text/plain\" });\n        var url = URL.createObjectURL(blob);\n        var a = document.createElement(\"a\");\n        a.href = url;\n        a.download = \"Layby-\" + frm.doc.name + \".txt\";\n        document.body.appendChild(a);\n        a.click();\n        document.body.removeChild(a);\n        URL.revokeObjectURL(url);\n\n        frappe.show_alert({ message: \"Layby receipt downloaded! Closing...\", indicator: \"green\" }, 3);\n        setTimeout(function() { window.close(); }, 2500);\n    }\n});"
+  }
+]

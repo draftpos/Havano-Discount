@@ -5,6 +5,8 @@ app_description = "Discount management for Havano Restaurant POS"
 app_email = "makonia20@gmail.com"
 app_license = "mit"
 
+fixtures = ["Client Script"]
+
 # Apps
 # ------------------
 
@@ -44,6 +46,9 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+    "Sales Order": "public/js/sales_order_layby.bundle.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
