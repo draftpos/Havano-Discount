@@ -28,7 +28,10 @@
       try {
         const r = await fetch("/api/method/" + method, {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Frappe-CSRF-Token": getCsrfFromMeta() },
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Frappe-CSRF-Token": window.csrf_token || ""
+          },
           body: params
         });
         const data = await r.json();
@@ -36,14 +39,6 @@
       } catch (e) {
         return null;
       }
-    }
-    function getCsrf() {
-      var _a;
-      return window.csrf_token || window.__csrf_token || ((_a = document.cookie.split(";").map((c) => c.trim()).find((c) => c.startsWith("csrf_token="))) == null ? void 0 : _a.split("=")[1]) || "";
-    }
-    function getCsrfFromMeta() {
-      var _a;
-      return ((_a = document.querySelector('meta[name="csrf-token"]')) == null ? void 0 : _a.getAttribute("content")) || getCsrf();
     }
     async function getSettings() {
       const data = await apiFetch("havano_restaurant_pos.api.get_ha_pos_settings", {});
@@ -58,6 +53,72 @@
       }
       if (retries > 0)
         setTimeout(() => waitFor(selector, cb, retries - 1), 400);
+    }
+    function openPinModal(onApproved, onCancelled) {
+      if (document.getElementById("ha-pin-modal"))
+        return;
+      const modal = document.createElement("div");
+      modal.id = "ha-pin-modal";
+      modal.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);";
+      modal.innerHTML = `
+      <div style="background:#fff;border-radius:16px;width:100%;max-width:320px;margin:16px;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.3);">
+        <div style="background:#374151;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;">
+          <h2 style="color:#fff;font-size:1rem;font-weight:700;margin:0;">Supervisor Approval</h2>
+          <button id="ha-pin-close" style="color:#fff;background:none;border:none;font-size:1.4rem;cursor:pointer;line-height:1;">\xD7</button>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+          <p style="font-size:0.875rem;color:#6b7280;margin:0;text-align:center;">Enter supervisor PIN to apply discount</p>
+          <input id="ha-pin-input" type="password" placeholder="Enter PIN"
+            style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:1.1rem;box-sizing:border-box;letter-spacing:6px;text-align:center;"/>
+          <div id="ha-pin-error" style="font-size:0.8rem;color:#dc2626;display:none;text-align:center;min-height:16px;"></div>
+          <div style="display:flex;gap:10px;">
+            <button id="ha-pin-cancel" style="flex:1;height:40px;border-radius:8px;border:2px solid #d1d5db;background:#fff;color:#374151;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="ha-pin-confirm" style="flex:2;height:40px;border-radius:8px;background:#374151;color:#fff;font-weight:700;border:none;cursor:pointer;">Approve</button>
+          </div>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+      setTimeout(() => {
+        var _a;
+        return (_a = document.getElementById("ha-pin-input")) == null ? void 0 : _a.focus();
+      }, 100);
+      const close = (cancelled) => {
+        modal.remove();
+        if (cancelled && onCancelled)
+          onCancelled();
+      };
+      document.getElementById("ha-pin-close").onclick = () => close(true);
+      document.getElementById("ha-pin-cancel").onclick = () => close(true);
+      modal.onclick = (e) => {
+        if (e.target === modal)
+          close(true);
+      };
+      document.getElementById("ha-pin-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter")
+          document.getElementById("ha-pin-confirm").click();
+      });
+      document.getElementById("ha-pin-confirm").onclick = async () => {
+        var _a;
+        const pin = (_a = document.getElementById("ha-pin-input")) == null ? void 0 : _a.value;
+        if (!pin)
+          return;
+        const btn = document.getElementById("ha-pin-confirm");
+        const errEl = document.getElementById("ha-pin-error");
+        btn.textContent = "Checking...";
+        btn.disabled = true;
+        const res = await apiFetch("discount.api.validate_supervisor_pin", { pin });
+        if (res == null ? void 0 : res.valid) {
+          modal.remove();
+          onApproved();
+        } else {
+          errEl.textContent = (res == null ? void 0 : res.message) || "Invalid PIN. Try again.";
+          errEl.style.display = "block";
+          btn.textContent = "Approve";
+          btn.disabled = false;
+          document.getElementById("ha-pin-input").value = "";
+          document.getElementById("ha-pin-input").focus();
+        }
+      };
     }
     function injectLaybyButton() {
       if (!settings.allow_layby)
@@ -165,9 +226,8 @@
         const customers = Array.isArray(r) ? r : [];
         const list = document.getElementById("ha-r-cust-list");
         list.innerHTML = customers.length === 0 ? `<p style="padding:12px 16px;font-size:0.875rem;color:#9ca3af;">No customers found</p>` : customers.map((c) => `<button type="button" data-name="${c.name}" data-label="${c.customer_name}"
-              style="display:block;width:100%;text-align:left;padding:10px 16px;font-size:0.875rem;border:none;border-bottom:1px solid #f3f4f6;background:#fff;cursor:pointer;"
-              onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='#fff'">
-              ${c.customer_name}</button>`).join("");
+            style="display:block;width:100%;text-align:left;padding:10px 16px;font-size:0.875rem;border:none;border-bottom:1px solid #f3f4f6;background:#fff;cursor:pointer;"
+            onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='#fff'">${c.customer_name}</button>`).join("");
         list.style.display = "block";
         list.querySelectorAll("button[data-name]").forEach((btn) => {
           btn.onclick = () => {
@@ -185,10 +245,9 @@
         const list = document.getElementById("ha-r-acct-list");
         const filtered = q ? allAccounts.filter((a) => a.name.toLowerCase().includes(q.toLowerCase())) : allAccounts;
         list.innerHTML = filtered.map((a) => `<button type="button" data-name="${a.name}"
-          style="display:block;width:100%;text-align:left;padding:8px 12px;font-size:0.875rem;border:none;border-bottom:1px solid #f3f4f6;background:#fff;cursor:pointer;"
-          onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='#fff'">
-          ${a.name}<span style="font-size:0.75rem;color:#9ca3af;margin-left:8px;">${a.account_type}</span>
-        </button>`).join("");
+        style="display:block;width:100%;text-align:left;padding:8px 12px;font-size:0.875rem;border:none;border-bottom:1px solid #f3f4f6;background:#fff;cursor:pointer;"
+        onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background='#fff'">
+        ${a.name}<span style="font-size:0.75rem;color:#9ca3af;margin-left:8px;">${a.account_type}</span></button>`).join("");
         list.style.display = filtered.length ? "block" : "none";
         list.querySelectorAll("button[data-name]").forEach((btn) => {
           btn.onclick = () => {
@@ -295,20 +354,25 @@
       section.className = "ha-discount-section";
       section.style.cssText = "margin-top:12px;";
       section.innerHTML = `
-      <label style="display:block;font-size:0.875rem;font-weight:500;margin-bottom:6px;color:#374151;">Discount</label>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <label style="font-size:0.875rem;font-weight:500;color:#374151;">Discount</label>
+        <span id="ha-disc-rule-badge" style="display:none;font-size:0.7rem;background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:9999px;"></span>
+      </div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div style="flex:1;">
           <label style="font-size:0.75rem;color:#6b7280;margin-bottom:2px;display:block;">Amount (\u2212)</label>
-          <input id="ha-disc-amount" type="number" step="0.01" min="0" placeholder="0.00"
-            style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;"/>
+          <input id="ha-disc-amount" type="number" step="0.01" min="0" placeholder="0.00" disabled
+            style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;background:#f9fafb;cursor:pointer;"/>
         </div>
         <div style="padding-bottom:10px;color:#9ca3af;font-weight:600;">or</div>
         <div style="flex:1;">
           <label style="font-size:0.75rem;color:#6b7280;margin-bottom:2px;display:block;">Percentage (%)</label>
-          <input id="ha-disc-pct" type="number" step="0.01" min="0" max="100" placeholder="0"
-            style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;"/>
+          <input id="ha-disc-pct" type="number" step="0.01" min="0" max="100" placeholder="0" disabled
+            style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;background:#f9fafb;cursor:pointer;"/>
         </div>
       </div>
+      <div id="ha-disc-range" style="font-size:0.72rem;color:#9ca3af;margin-top:3px;display:none;"></div>
+      <div id="ha-disc-hint" style="font-size:0.75rem;color:#9ca3af;margin-top:6px;font-style:italic;">Click a field to enter discount (requires PIN)</div>
       <div id="ha-disc-preview" style="margin-top:6px;font-size:0.8rem;color:#059669;display:none;">
         New price: <strong id="ha-disc-new-price"></strong>
       </div>
@@ -319,57 +383,155 @@
       const preview = section.querySelector("#ha-disc-preview");
       const newPriceEl = section.querySelector("#ha-disc-new-price");
       const errorEl = section.querySelector("#ha-disc-error");
+      const rangeEl = section.querySelector("#ha-disc-range");
+      const hintEl = section.querySelector("#ha-disc-hint");
+      const ruleBadge = section.querySelector("#ha-disc-rule-badge");
+      let pinApproved = false;
+      let minPct = 0, maxPct = 100;
+      let pricingRuleLoaded = false;
       function getBase() {
         return parseFloat((priceInput == null ? void 0 : priceInput.value) || 0);
       }
-      function updatePreview(newPrice) {
-        if (newPrice < 0) {
-          errorEl.textContent = "Discount cannot exceed item price.";
-          errorEl.style.display = "block";
-          preview.style.display = "none";
-          return false;
-        }
-        errorEl.style.display = "none";
-        newPriceEl.textContent = newPrice.toFixed(2);
-        preview.style.display = "block";
-        return true;
+      function showError(msg) {
+        errorEl.textContent = msg;
+        errorEl.style.display = msg ? "block" : "none";
+        preview.style.display = msg ? "none" : preview.style.display;
       }
       function applyToReact(newPrice) {
-        if (newPrice < 0 || !priceInput)
+        if (!priceInput)
           return;
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
         setter.call(priceInput, newPrice.toFixed(2));
         priceInput.dispatchEvent(new Event("input", { bubbles: true }));
         priceInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      function validateAndApply(newPrice, pct) {
+        showError("");
+        if (newPrice < 0) {
+          showError("Discount exceeds item price.");
+          return;
+        }
+        if (pct < minPct) {
+          showError(`Minimum discount is ${minPct}%`);
+          return;
+        }
+        if (pct > maxPct) {
+          showError(`Maximum discount is ${maxPct}%`);
+          return;
+        }
+        newPriceEl.textContent = newPrice.toFixed(2);
+        preview.style.display = "block";
+        applyToReact(newPrice);
+      }
+      function unlockFields() {
+        pinApproved = true;
+        amtInput.disabled = false;
+        pctInput.disabled = false;
+        amtInput.style.background = "#fff";
+        pctInput.style.background = "#fff";
+        amtInput.style.cursor = "text";
+        pctInput.style.cursor = "text";
+        amtInput.style.borderColor = "#d1d5db";
+        pctInput.style.borderColor = "#d1d5db";
+        hintEl.textContent = "PIN approved \u2014 enter discount below";
+        hintEl.style.color = "#059669";
+        amtInput.focus();
+      }
+      function requestPin(inputEl) {
+        if (pinApproved)
+          return;
+        inputEl.blur();
+        openPinModal(
+          () => unlockFields(),
+          () => {
+          }
+        );
+      }
+      amtInput.addEventListener("mousedown", (e) => {
+        if (!pinApproved) {
+          e.preventDefault();
+          requestPin(amtInput);
+        }
+      });
+      pctInput.addEventListener("mousedown", (e) => {
+        if (!pinApproved) {
+          e.preventDefault();
+          requestPin(pctInput);
+        }
+      });
+      amtInput.addEventListener("focus", () => {
+        if (!pinApproved)
+          requestPin(amtInput);
+      });
+      pctInput.addEventListener("focus", () => {
+        if (!pinApproved)
+          requestPin(pctInput);
+      });
       amtInput.addEventListener("input", () => {
+        if (!pinApproved)
+          return;
         const base = getBase(), amt = parseFloat(amtInput.value || 0);
-        if (base > 0) {
-          pctInput.value = (amt / base * 100).toFixed(2);
-          updatePreview(base - amt);
-          applyToReact(base - amt);
+        if (base > 0 && !isNaN(amt)) {
+          const pct = amt / base * 100;
+          pctInput.value = pct.toFixed(2);
+          validateAndApply(base - amt, pct);
         }
       });
       pctInput.addEventListener("input", () => {
+        if (!pinApproved)
+          return;
         const base = getBase(), pct = parseFloat(pctInput.value || 0);
-        if (base > 0) {
-          const d = pct / 100 * base;
-          amtInput.value = d.toFixed(2);
-          updatePreview(base - d);
-          applyToReact(base - d);
+        if (base > 0 && !isNaN(pct)) {
+          const amt = pct / 100 * base;
+          amtInput.value = amt.toFixed(2);
+          validateAndApply(base - amt, pct);
         }
       });
+      async function loadPricingRule() {
+        const itemCode = window.__ha_selected_item_code;
+        if (!itemCode)
+          return;
+        const res = await apiFetch("discount.api.get_item_discount", { item_code: itemCode });
+        if (res == null ? void 0 : res.has_discount) {
+          minPct = res.min_discount || 0;
+          maxPct = res.max_discount || 100;
+          ruleBadge.textContent = res.rule_name || "Pricing Rule";
+          ruleBadge.style.display = "inline";
+          if (minPct > 0 || maxPct < 100) {
+            rangeEl.textContent = `Allowed range: ${minPct}% \u2013 ${maxPct}%`;
+            rangeEl.style.display = "block";
+          }
+        }
+        pricingRuleLoaded = true;
+      }
+      loadPricingRule();
     }
     function watchForDialog() {
       if (!settings.allow_discount)
         return;
-      const observer = new MutationObserver(() => {
-        const dialog = document.querySelector('[role="dialog"]');
-        if (dialog && dialog.offsetParent !== null) {
-          injectDiscountIntoDialog(dialog);
+      window.addEventListener("ha:cart-dialog-open", (e) => {
+        var _a;
+        if ((_a = e.detail) == null ? void 0 : _a.item) {
+          window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
         }
+        setTimeout(() => {
+          const allDialogs = [...document.querySelectorAll('[role="dialog"]')];
+          const dialog = allDialogs.find((d) => d.style.pointerEvents === "auto") || allDialogs[allDialogs.length - 1];
+          if (!dialog)
+            return;
+          if (dialog.querySelector(".ha-discount-section"))
+            return;
+          const priceLabel = [...dialog.querySelectorAll("label")].find((l) => l.textContent.trim() === "Price");
+          if (!priceLabel)
+            return;
+          injectDiscountIntoDialog(dialog);
+        }, 300);
       });
-      observer.observe(document.body, { childList: true, subtree: true });
+      window.addEventListener("ha:cart-dialog-close", () => {
+        var _a;
+        document.querySelectorAll(".ha-discount-section").forEach((el) => el.remove());
+        (_a = document.getElementById("ha-pin-modal")) == null ? void 0 : _a.remove();
+      });
     }
     function watchRoutes() {
       let last = location.pathname;
@@ -402,4 +564,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.JLND2WZU.js.map
+//# sourceMappingURL=discount.bundle.L7HTIJMH.js.map

@@ -10,8 +10,8 @@ app_email = "your@email.com"
 app_license = "MIT"
 
 # Inject into POS dashboard
-web_include_js = ["/assets/discount/js/discount.bundle.js"]
-app_include_js = ["/assets/discount/js/discount.bundle.js"]
+web_include_js = ["/assets/discount/dist/js/discount.bundle.js"]
+app_include_js = ["/assets/discount/dist/js/discount.bundle.js"]
 
 after_install = "discount.install.after_install"
 after_migrate = ["discount.install.after_install"]
