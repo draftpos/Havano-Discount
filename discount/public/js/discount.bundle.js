@@ -1,8 +1,7 @@
-// Discount App — injects Layby, Receipt buttons and Discount UI into Havano POS dashboard
+// Discount App — Havano POS
 
 (function () {
   "use strict";
-
   if (!window.location.pathname.includes("/dashboard")) return;
 
   let settings = {};
@@ -12,10 +11,7 @@
     try {
       const r = await fetch("/api/method/" + method, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Frappe-CSRF-Token": window.csrf_token || ""
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Frappe-CSRF-Token": window.csrf_token || "" },
         body: params
       });
       const data = await r.json();
@@ -24,8 +20,8 @@
   }
 
   async function getSettings() {
-    const data = await apiFetch("havano_restaurant_pos.api.get_ha_pos_settings", {});
-    settings = data?.data || {};
+    const data = await apiFetch("discount.api.get_ha_discount_settings", {});
+    settings = data || {};
     return settings;
   }
 
@@ -35,71 +31,9 @@
     if (retries > 0) setTimeout(() => waitFor(selector, cb, retries - 1), 400);
   }
 
-  // ════════════════════════════════════════
-  // PIN MODAL
-  // ════════════════════════════════════════
-  function openPinModal(onApproved, onCancelled) {
-    if (document.getElementById("ha-pin-modal")) return;
-    const modal = document.createElement("div");
-    modal.id = "ha-pin-modal";
-    modal.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);";
-    modal.innerHTML = `
-      <div style="background:#fff;border-radius:16px;width:100%;max-width:320px;margin:16px;overflow:hidden;box-shadow:0 25px 50px rgba(0,0,0,0.3);">
-        <div style="background:#374151;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;">
-          <h2 style="color:#fff;font-size:1rem;font-weight:700;margin:0;">Supervisor Approval</h2>
-          <button id="ha-pin-close" style="color:#fff;background:none;border:none;font-size:1.4rem;cursor:pointer;line-height:1;">×</button>
-        </div>
-        <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-          <p style="font-size:0.875rem;color:#6b7280;margin:0;text-align:center;">Enter supervisor PIN to apply discount</p>
-          <input id="ha-pin-input" type="password" placeholder="Enter PIN"
-            style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:1.1rem;box-sizing:border-box;letter-spacing:6px;text-align:center;"/>
-          <div id="ha-pin-error" style="font-size:0.8rem;color:#dc2626;display:none;text-align:center;min-height:16px;"></div>
-          <div style="display:flex;gap:10px;">
-            <button id="ha-pin-cancel" style="flex:1;height:40px;border-radius:8px;border:2px solid #d1d5db;background:#fff;color:#374151;font-weight:600;cursor:pointer;">Cancel</button>
-            <button id="ha-pin-confirm" style="flex:2;height:40px;border-radius:8px;background:#374151;color:#fff;font-weight:700;border:none;cursor:pointer;">Approve</button>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-
-    setTimeout(() => document.getElementById("ha-pin-input")?.focus(), 100);
-
-    const close = (cancelled) => {
-      modal.remove();
-      if (cancelled && onCancelled) onCancelled();
-    };
-
-    document.getElementById("ha-pin-close").onclick = () => close(true);
-    document.getElementById("ha-pin-cancel").onclick = () => close(true);
-    modal.onclick = e => { if (e.target === modal) close(true); };
-
-    document.getElementById("ha-pin-input").addEventListener("keydown", e => {
-      if (e.key === "Enter") document.getElementById("ha-pin-confirm").click();
-    });
-
-    document.getElementById("ha-pin-confirm").onclick = async () => {
-      const pin = document.getElementById("ha-pin-input")?.value;
-      if (!pin) return;
-      const btn = document.getElementById("ha-pin-confirm");
-      const errEl = document.getElementById("ha-pin-error");
-      btn.textContent = "Checking..."; btn.disabled = true;
-      const res = await apiFetch("discount.api.validate_supervisor_pin", { pin });
-      if (res?.valid) {
-        modal.remove();
-        onApproved();
-      } else {
-        errEl.textContent = res?.message || "Invalid PIN. Try again.";
-        errEl.style.display = "block";
-        btn.textContent = "Approve"; btn.disabled = false;
-        document.getElementById("ha-pin-input").value = "";
-        document.getElementById("ha-pin-input").focus();
-      }
-    };
-  }
-
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // 1. LAYBY BUTTON
-  // ════════════════════════════════════════
+  // ════════════════════════════
   function injectLaybyButton() {
     if (!settings.allow_layby) return;
     if (document.querySelector(".ha-layby-btn")) return;
@@ -119,9 +53,9 @@
     tryInject();
   }
 
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // 2. RECEIPT BUTTON
-  // ════════════════════════════════════════
+  // ════════════════════════════
   function injectReceiptButton() {
     if (!settings.allow_receipts) return;
     if (document.querySelector(".ha-receipt-btn")) return;
@@ -141,9 +75,9 @@
     tryInject();
   }
 
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // 3. RECEIPT MODAL
-  // ════════════════════════════════════════
+  // ════════════════════════════
   function openReceiptModal() {
     if (document.getElementById("ha-receipt-modal")) return;
     const modal = document.createElement("div");
@@ -278,16 +212,9 @@
     };
   }
 
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // 4. DISCOUNT in UpdateCartDialog
-  // Flow:
-  //   - Show amount + percentage fields (locked/disabled)
-  //   - When user clicks either field → PIN popup
-  //   - After PIN approved → unlock fields
-  //   - User enters amount OR % → other auto-calculates
-  //   - Validates against pricing rule range
-  //   - Live updates price field in React
-  // ════════════════════════════════════════
+  // ════════════════════════════
   function injectDiscountIntoDialog(dialogEl) {
     if (!settings.allow_discount) return;
     if (dialogEl.querySelector(".ha-discount-section")) return;
@@ -300,178 +227,258 @@
 
     const section = document.createElement("div");
     section.className = "ha-discount-section";
-    section.style.cssText = "margin-top:12px;";
+    section.style.cssText = "margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;";
+
     section.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <label style="font-size:0.875rem;font-weight:500;color:#374151;">Discount</label>
-        <span id="ha-disc-rule-badge" style="display:none;font-size:0.7rem;background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:9999px;"></span>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <input type="checkbox" id="ha-disc-chk" style="width:16px;height:16px;accent-color:#374151;"/>
+        <label for="ha-disc-chk" style="font-size:0.875rem;font-weight:600;color:#374151;cursor:pointer;user-select:none;">Apply Discount</label>
+        <span id="ha-disc-badge" style="display:none;font-size:0.7rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;font-weight:500;margin-left:auto;"></span>
       </div>
-      <div style="display:flex;gap:8px;align-items:flex-end;">
-        <div style="flex:1;">
-          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:2px;display:block;">Amount (−)</label>
-          <input id="ha-disc-amount" type="number" step="0.01" min="0" placeholder="0.00" disabled
-            style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;background:#f9fafb;cursor:pointer;"/>
+      <div id="ha-disc-no-rule" style="display:none;font-size:0.8rem;color:#9ca3af;font-style:italic;">No discount available for this item.</div>
+      <div id="ha-disc-range-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;"></div>
+      <div id="ha-disc-pin-area" style="display:none;margin-top:10px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;">
+        <div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;font-weight:500;">Enter supervisor PIN:</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="ha-pin-input" type="password" placeholder="Enter PIN"
+            style="flex:1;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;font-size:1rem;letter-spacing:4px;box-sizing:border-box;background:#fff;"
+            autocomplete="off"/>
+          <button id="ha-pin-ok" type="button"
+            style="padding:8px 16px;background:#374151;color:#fff;border:none;border-radius:6px;font-size:0.875rem;font-weight:600;cursor:pointer;">Approve</button>
+          <button id="ha-pin-cancel" type="button"
+            style="padding:8px 12px;background:#fff;color:#6b7280;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;cursor:pointer;">Cancel</button>
         </div>
-        <div style="padding-bottom:10px;color:#9ca3af;font-weight:600;">or</div>
-        <div style="flex:1;">
-          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:2px;display:block;">Percentage (%)</label>
-          <input id="ha-disc-pct" type="number" step="0.01" min="0" max="100" placeholder="0" disabled
-            style="width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:7px 10px;font-size:0.875rem;box-sizing:border-box;background:#f9fafb;cursor:pointer;"/>
+        <div id="ha-pin-err" style="font-size:0.75rem;color:#dc2626;margin-top:6px;display:none;"></div>
+      </div>
+      <div id="ha-disc-fields" style="display:none;margin-top:10px;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button id="ha-btn-pct" type="button"
+            style="flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;">
+            % Percentage
+          </button>
+          <button id="ha-btn-amt" type="button"
+            style="flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;">
+            $ Amount
+          </button>
         </div>
-      </div>
-      <div id="ha-disc-range" style="font-size:0.72rem;color:#9ca3af;margin-top:3px;display:none;"></div>
-      <div id="ha-disc-hint" style="font-size:0.75rem;color:#9ca3af;margin-top:6px;font-style:italic;">Click a field to enter discount (requires PIN)</div>
-      <div id="ha-disc-preview" style="margin-top:6px;font-size:0.8rem;color:#059669;display:none;">
-        New price: <strong id="ha-disc-new-price"></strong>
-      </div>
-      <div id="ha-disc-error" style="margin-top:4px;font-size:0.8rem;color:#dc2626;display:none;"></div>`;
+        <div id="ha-pct-section" style="display:none;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;text-align:center;">
+          <div style="font-size:0.8rem;color:#6b7280;margin-bottom:6px;">Pricing rule discount:</div>
+          <div id="ha-pct-value" style="font-size:2rem;font-weight:700;color:#374151;"></div>
+          <div id="ha-pct-newprice" style="font-size:0.9rem;color:#059669;font-weight:600;margin-top:4px;"></div>
+        </div>
+        <div id="ha-amt-section" style="display:none;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+          <div id="ha-amt-hint" style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px;background:#f0f9ff;border-radius:4px;"></div>
+          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">New Price</label>
+          <input id="ha-amt-input" type="number" step="0.01" min="0" placeholder="Enter new price"
+            style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;font-size:0.875rem;box-sizing:border-box;background:#fff;"/>
+          <div id="ha-amt-ok" style="margin-top:6px;font-size:0.8rem;color:#059669;font-weight:500;display:none;"></div>
+          <div id="ha-amt-err" style="margin-top:6px;font-size:0.8rem;color:#dc2626;padding:6px 10px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;display:none;"></div>
+        </div>
+      </div>`;
 
     priceContainer.after(section);
 
-    const amtInput = section.querySelector("#ha-disc-amount");
-    const pctInput = section.querySelector("#ha-disc-pct");
-    const preview = section.querySelector("#ha-disc-preview");
-    const newPriceEl = section.querySelector("#ha-disc-new-price");
-    const errorEl = section.querySelector("#ha-disc-error");
-    const rangeEl = section.querySelector("#ha-disc-range");
-    const hintEl = section.querySelector("#ha-disc-hint");
-    const ruleBadge = section.querySelector("#ha-disc-rule-badge");
+    const chk = section.querySelector("#ha-disc-chk");
+    const noRule = section.querySelector("#ha-disc-no-rule");
+    const rangeInfo = section.querySelector("#ha-disc-range-info");
+    const badge = section.querySelector("#ha-disc-badge");
+    const pinArea = section.querySelector("#ha-disc-pin-area");
+    const pinInput = section.querySelector("#ha-pin-input");
+    const pinOk = section.querySelector("#ha-pin-ok");
+    const pinCancel = section.querySelector("#ha-pin-cancel");
+    const pinErr = section.querySelector("#ha-pin-err");
+    const fields = section.querySelector("#ha-disc-fields");
+    const btnPct = section.querySelector("#ha-btn-pct");
+    const btnAmt = section.querySelector("#ha-btn-amt");
+    const pctSection = section.querySelector("#ha-pct-section");
+    const amtSection = section.querySelector("#ha-amt-section");
+    const pctValue = section.querySelector("#ha-pct-value");
+    const pctNewPrice = section.querySelector("#ha-pct-newprice");
+    const amtHint = section.querySelector("#ha-amt-hint");
+    const amtInput = section.querySelector("#ha-amt-input");
+    const amtOk = section.querySelector("#ha-amt-ok");
+    const amtErr = section.querySelector("#ha-amt-err");
 
     let pinApproved = false;
-    let minPct = 0, maxPct = 100;
-    let pricingRuleLoaded = false;
+    let discountPct = 0;
+    let maxPct = 0;
+    let hasRule = false;
 
     function getBase() { return parseFloat(priceInput?.value || 0); }
 
-    function showError(msg) {
-      errorEl.textContent = msg;
-      errorEl.style.display = msg ? "block" : "none";
-      preview.style.display = msg ? "none" : preview.style.display;
-    }
-
-    function applyToReact(newPrice) {
-      if (!priceInput) return;
+    function applyToReact(val) {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-      setter.call(priceInput, newPrice.toFixed(2));
+      setter.call(priceInput, val.toFixed(2));
       priceInput.dispatchEvent(new Event("input", { bubbles: true }));
       priceInput.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    function validateAndApply(newPrice, pct) {
-      showError("");
-      if (newPrice < 0) { showError("Discount exceeds item price."); return; }
-      if (pct < minPct) { showError(`Minimum discount is ${minPct}%`); return; }
-      if (pct > maxPct) { showError(`Maximum discount is ${maxPct}%`); return; }
-      newPriceEl.textContent = newPrice.toFixed(2);
-      preview.style.display = "block";
-      applyToReact(newPrice);
+    // PIN approve
+    async function doApprove() {
+      const pin = pinInput.value.trim();
+      if (!pin) { pinInput.focus(); return; }
+      pinOk.textContent = "..."; pinOk.disabled = true;
+      pinErr.style.display = "none";
+      const res = await apiFetch("discount.api.validate_supervisor_pin", { pin });
+      if (res?.valid) {
+        pinApproved = true;
+        pinArea.style.display = "none";
+        chk.checked = true;
+        fields.style.display = "block";
+        pinInput.value = "";
+      } else {
+        pinErr.textContent = res?.message || "Invalid PIN.";
+        pinErr.style.display = "block";
+        pinInput.value = "";
+        pinInput.focus();
+      }
+      pinOk.textContent = "Approve"; pinOk.disabled = false;
     }
 
-    function unlockFields() {
-      pinApproved = true;
-      amtInput.disabled = false;
-      pctInput.disabled = false;
-      amtInput.style.background = "#fff";
-      pctInput.style.background = "#fff";
-      amtInput.style.cursor = "text";
-      pctInput.style.cursor = "text";
-      amtInput.style.borderColor = "#d1d5db";
-      pctInput.style.borderColor = "#d1d5db";
-      hintEl.textContent = "PIN approved — enter discount below";
-      hintEl.style.color = "#059669";
+    pinOk.onclick = doApprove;
+    pinCancel.onclick = () => { pinArea.style.display = "none"; chk.checked = false; pinInput.value = ""; pinErr.style.display = "none"; };
+    pinInput.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); doApprove(); } });
+    pinInput.addEventListener("keyup", e => e.stopPropagation());
+
+    // Percentage button — auto apply rule discount, read only
+    btnPct.onclick = () => {
+      btnPct.style.cssText = "flex:1;padding:10px;border:2px solid #374151;border-radius:8px;background:#374151;color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;";
+      btnAmt.style.cssText = "flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;";
+      pctSection.style.display = "block";
+      amtSection.style.display = "none";
+      const base = getBase();
+      const newP = base - (discountPct / 100) * base;
+      pctValue.textContent = discountPct + "%";
+      pctNewPrice.textContent = `New price: ${newP.toFixed(2)} (save ${((discountPct / 100) * base).toFixed(2)})`;
+      applyToReact(newP);
+    };
+
+    // Amount button — enter new price within range
+    btnAmt.onclick = () => {
+      btnAmt.style.cssText = "flex:1;padding:10px;border:2px solid #374151;border-radius:8px;background:#374151;color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;";
+      btnPct.style.cssText = "flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;";
+      amtSection.style.display = "block";
+      pctSection.style.display = "none";
+      amtErr.style.display = "none";
+      amtOk.style.display = "none";
+      amtInput.value = "";
+      const base = getBase();
+      const minPrice = base - (maxPct / 100) * base;
+      amtHint.textContent = `Allowed price range: ${minPrice.toFixed(2)} – ${base.toFixed(2)} (max ${maxPct}% discount)`;
       amtInput.focus();
-    }
+    };
 
-    function requestPin(inputEl) {
-      if (pinApproved) return;
-      inputEl.blur();
-      openPinModal(
-        () => unlockFields(),
-        () => { /* cancelled — do nothing */ }
-      );
-    }
-
-    amtInput.addEventListener("mousedown", (e) => { if (!pinApproved) { e.preventDefault(); requestPin(amtInput); } });
-    pctInput.addEventListener("mousedown", (e) => { if (!pinApproved) { e.preventDefault(); requestPin(pctInput); } });
-    amtInput.addEventListener("focus", () => { if (!pinApproved) requestPin(amtInput); });
-    pctInput.addEventListener("focus", () => { if (!pinApproved) requestPin(pctInput); });
-
+    // Amount input — validate and apply
     amtInput.addEventListener("input", () => {
-      if (!pinApproved) return;
-      const base = getBase(), amt = parseFloat(amtInput.value || 0);
-      if (base > 0 && !isNaN(amt)) {
-        const pct = (amt / base) * 100;
-        pctInput.value = pct.toFixed(2);
-        validateAndApply(base - amt, pct);
+      const base = getBase();
+      const newP = parseFloat(amtInput.value);
+      amtErr.style.display = "none";
+      amtOk.style.display = "none";
+      if (isNaN(newP) || amtInput.value === "") return;
+      const minPrice = base - (maxPct / 100) * base;
+      const pct = ((base - newP) / base) * 100;
+      if (newP > base) {
+        amtErr.textContent = `⚠ Price cannot exceed original price ${base.toFixed(2)}. Restored.`;
+        amtErr.style.display = "block";
+        applyToReact(base); return;
       }
+      if (newP < minPrice) {
+        amtErr.textContent = `⚠ Exceeds max discount of ${maxPct}%. Min price is ${minPrice.toFixed(2)}. Restored.`;
+        amtErr.style.display = "block";
+        applyToReact(base); return;
+      }
+      amtOk.textContent = `✓ Discount: ${pct.toFixed(1)}% — New price: ${newP.toFixed(2)}`;
+      amtOk.style.display = "block";
+      applyToReact(newP);
+    });
+    amtInput.addEventListener("keydown", e => e.stopPropagation());
+    amtInput.addEventListener("keyup", e => e.stopPropagation());
+
+    // Checkbox
+    chk.addEventListener("change", () => {
+      if (!chk.checked) {
+        pinArea.style.display = "none";
+        fields.style.display = "none";
+        pinApproved = false;
+        pinInput.value = "";
+        return;
+      }
+      if (pinApproved) { fields.style.display = "block"; return; }
+      chk.checked = false;
+      pinArea.style.display = "block";
+      setTimeout(() => pinInput.focus(), 50);
     });
 
-    pctInput.addEventListener("input", () => {
-      if (!pinApproved) return;
-      const base = getBase(), pct = parseFloat(pctInput.value || 0);
-      if (base > 0 && !isNaN(pct)) {
-        const amt = (pct / 100) * base;
-        amtInput.value = amt.toFixed(2);
-        validateAndApply(base - amt, pct);
-      }
-    });
+    // Load pricing rule
+    async function loadRule() {
+      const code = window.__ha_selected_item_code;
+      const res = code ? await apiFetch("discount.api.get_item_discount", { item_code: code }) : null;
 
-    // Load pricing rule for this item to get allowed range
-    async function loadPricingRule() {
-      const itemCode = window.__ha_selected_item_code;
-      if (!itemCode) return;
-      const res = await apiFetch("discount.api.get_item_discount", { item_code: itemCode });
-      if (res?.has_discount) {
-        minPct = res.min_discount || 0;
-        maxPct = res.max_discount || 100;
-        ruleBadge.textContent = res.rule_name || "Pricing Rule";
-        ruleBadge.style.display = "inline";
-        if (minPct > 0 || maxPct < 100) {
-          rangeEl.textContent = `Allowed range: ${minPct}% – ${maxPct}%`;
-          rangeEl.style.display = "block";
-        }
+      // No rule or no discount — disable checkbox completely
+      if (!res || !res.has_discount) {
+        noRule.style.display = "block";
+        // Make checkbox non-functional
+        chk.disabled = true;
+        chk.style.cssText = "width:16px;height:16px;opacity:0.4;cursor:not-allowed;pointer-events:none;";
+        const lbl = section.querySelector('label[for="ha-disc-chk"]');
+        if (lbl) lbl.style.cssText = "font-size:0.875rem;font-weight:600;color:#9ca3af;cursor:not-allowed;user-select:none;pointer-events:none;";
+        // Intercept any clicks on section
+        section.addEventListener("click", (e) => {
+          if (e.target === chk || e.target === lbl) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            chk.checked = false;
+          }
+        }, true);
+        return;
       }
-      pricingRuleLoaded = true;
+
+      hasRule = !!res.pricing_rule;
+      discountPct = res.discount_value || 0;
+      // maxPct is the discount_percentage from pricing rule
+      maxPct = res.discount_value || res.max_discount || 0;
+      if (res.rule_name) { badge.textContent = res.rule_name; badge.style.display = "inline"; }
+      const base = getBase();
+      const minPrice = base - (maxPct / 100) * base;
+      rangeInfo.textContent = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} – ${base.toFixed(2)}`;
+      rangeInfo.style.display = "block";
     }
-
-    loadPricingRule();
+    loadRule();
   }
 
-  // ════════════════════════════════════════
-  // 5. WATCH FOR DIALOG via custom event
-  // POS fires ha:cart-dialog-open when dialog opens
-  // ════════════════════════════════════════
+  // ════════════════════════════
+  // 5. WATCH FOR DIALOG
+  // ════════════════════════════
   function watchForDialog() {
     if (!settings.allow_discount) return;
 
-    window.addEventListener("ha:cart-dialog-open", (e) => {
-      // Store item for pricing rule lookup
-      if (e.detail?.item) {
-        window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
+    // MutationObserver — catches dialog regardless of event timing
+    const observer = new MutationObserver(() => {
+      const dialogs = [...document.querySelectorAll('[role="dialog"]')];
+      const dialog = dialogs.find(d => d.style.pointerEvents === "auto") || dialogs[dialogs.length - 1];
+      if (!dialog || dialog.querySelector(".ha-discount-section")) return;
+      const pl = [...dialog.querySelectorAll("label")].find(l => l.textContent.trim() === "Price");
+      if (!pl) return;
+      // Grab item code from event detail if available, else from dialog heading
+      if (!window.__ha_selected_item_code) {
+        const heading = dialog.querySelector("h2,h3,[class*='title'],[class*='header']");
+        if (heading) window.__ha_selected_item_code = heading.textContent.trim();
       }
-      // Wait for React to render the dialog DOM
-      setTimeout(() => {
-        const allDialogs = [...document.querySelectorAll('[role="dialog"]')];
-        const dialog = allDialogs.find(d => d.style.pointerEvents === "auto") ||
-                       allDialogs[allDialogs.length - 1];
-        if (!dialog) return;
-        if (dialog.querySelector(".ha-discount-section")) return;
-        const priceLabel = [...dialog.querySelectorAll("label")].find(l => l.textContent.trim() === "Price");
-        if (!priceLabel) return;
-        injectDiscountIntoDialog(dialog);
-      }, 300);
+      injectDiscountIntoDialog(dialog);
     });
+    observer.observe(document.body, { childList: true, subtree: true });
 
+    // Also keep event listener for item_code capture
+    window.addEventListener("ha:cart-dialog-open", (e) => {
+      if (e.detail?.item) window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
+    });
     window.addEventListener("ha:cart-dialog-close", () => {
-      // Clean up on close
       document.querySelectorAll(".ha-discount-section").forEach(el => el.remove());
-      document.getElementById("ha-pin-modal")?.remove();
     });
   }
 
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // 6. ROUTE WATCHER
-  // ════════════════════════════════════════
+  // ════════════════════════════
   function watchRoutes() {
     let last = location.pathname;
     setInterval(() => {
@@ -482,9 +489,9 @@
     }, 300);
   }
 
-  // ════════════════════════════════════════
+  // ════════════════════════════
   // BOOT
-  // ════════════════════════════════════════
+  // ════════════════════════════
   async function boot() {
     await getSettings();
     console.log("[Discount App] Settings loaded:", settings);
@@ -503,5 +510,4 @@
   } else {
     boot();
   }
-
 })();

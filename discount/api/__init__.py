@@ -2,25 +2,41 @@ import frappe
 import json
 from discount.api.layby import create_layby_sales_order
 
+# ── Helper: get HA Discount Settings ──
+def get_discount_settings():
+    try:
+        return frappe.get_single("HA Discount Settings")
+    except Exception:
+        return None
+
 @frappe.whitelist()
 def check_discount_enabled():
-    """Check if discount is enabled in POS settings"""
-    try:
-        val = frappe.db.get_single_value("HA POS Settings", "allow_discount")
-        return {"enabled": bool(val)}
-    except Exception:
-        return {"enabled": True}
+    s = get_discount_settings()
+    return {"enabled": bool(s and s.allow_discount)}
+
+@frappe.whitelist()
+def get_ha_discount_settings():
+    """Return all discount settings for the POS frontend"""
+    s = get_discount_settings()
+    if not s:
+        return {"allow_discount": 0, "allow_layby": 0, "allow_receipts": 0,
+                "require_pin": 1, "min_discount_pct": 0, "max_discount_pct": 100}
+    return {
+        "allow_discount": s.allow_discount or 0,
+        "allow_layby": s.allow_layby or 0,
+        "allow_receipts": s.allow_receipts or 0,
+        "require_pin": s.require_pin_for_discount or 1,
+        "min_discount_pct": s.min_discount_pct or 0,
+        "max_discount_pct": s.max_discount_pct or 100,
+    }
 
 @frappe.whitelist()
 def get_item_discount(item_code):
     if not item_code:
         return {"has_discount": False}
-    try:
-        val = frappe.db.get_single_value("HA POS Settings", "allow_discount")
-        if not val:
-            return {"has_discount": False, "reason": "Discount not enabled"}
-    except Exception:
-        pass
+    s = get_discount_settings()
+    if not s or not s.allow_discount:
+        return {"has_discount": False, "reason": "Discount not enabled"}
     today = frappe.utils.today()
     rule = None
     item_rules = frappe.db.sql("""
@@ -70,79 +86,39 @@ def get_item_discount(item_code):
             discount_type = "Rate"
             discount_value = float(rule.get("rate") or 0)
         threshold = float(rule.get("threshold_percentage") or 0)
-        min_discount = max(0, discount_value - threshold) if threshold else 0
-        max_discount = discount_value + threshold if threshold else discount_value
+        # Use global min/max from HA Discount Settings if set
+        global_min = float(s.min_discount_pct or 0)
+        global_max = float(s.max_discount_pct or 100)
+        rule_min = max(global_min, max(0, discount_value - threshold) if threshold else global_min)
+        rule_max = min(global_max, discount_value + threshold if threshold else global_max)
         return {
             "has_discount": True,
             "rule_name": rule.get("title") or rule.get("name"),
             "pricing_rule": rule.get("name"),
             "discount_type": discount_type,
             "discount_value": discount_value,
-            "min_discount": min_discount,
-            "max_discount": max_discount,
+            "min_discount": rule_min,
+            "max_discount": rule_max,
             "description": rule.get("rule_description") or "",
             "match_type": rule.get("match_type"),
-            "valid_from": str(rule.get("valid_from") or ""),
-            "valid_upto": str(rule.get("valid_upto") or ""),
         }
-    return {"has_discount": False, "reason": "No active Pricing Rule found"}
-
-@frappe.whitelist()
-def save_discount_log(**kwargs):
-    log = {
-        "applied_by": frappe.session.user,
-        "item_code": kwargs.get("item_code", ""),
-        "item_name": kwargs.get("item_name", ""),
-        "quantity": float(kwargs.get("quantity", 1) or 1),
-        "original_price": float(kwargs.get("original_price", 0) or 0),
-        "final_price": float(kwargs.get("final_price", 0) or 0),
-        "discount_mode": kwargs.get("discount_mode", ""),
-        "discount_amount": float(kwargs.get("discount_amount", 0) or 0),
-        "cart_total": float(kwargs.get("cart_total", 0) or 0),
-        "grand_total": float(kwargs.get("grand_total", 0) or 0),
-        "pricing_rule": kwargs.get("pricing_rule", ""),
-    }
-    frappe.log_error(json.dumps(log, indent=2), "Discount Applied - " + log["item_name"])
-    return {"success": True}
-
-@frappe.whitelist()
-def get_discount_settings():
-    try:
-        val = frappe.db.get_single_value("HA POS Settings", "allow_discount")
-        return {
-            "enable_discount": bool(val),
-            "allow_item_discount": True,
-            "allow_order_discount": True,
-            "require_supervisor_auth": False,
-        }
-    except Exception:
-        return {
-            "enable_discount": False,
-            "allow_item_discount": False,
-            "allow_order_discount": False,
-            "require_supervisor_auth": False,
-        }
-
-@frappe.whitelist()
-def check_user_discount_permission():
-    user = frappe.session.user
-    try:
-        settings = frappe.get_single("HA POS Settings")
-        for row in settings.user_mapping:
-            if row.user == user:
-                return {
-                    "has_permission": bool(row.allow_add_discount),
-                    "requires_approval": bool(row.allow_add_discount),
-                }
-        return {"has_permission": False, "requires_approval": False}
-    except Exception:
-        return {"has_permission": False, "requires_approval": False}
+    # No pricing rule found for this item
+    return {"has_discount": False, "reason": "No pricing rule for this item"}
 
 @frappe.whitelist()
 def validate_supervisor_pin(pin):
     if not pin:
         return {"valid": False, "message": "PIN is required"}
     try:
+        # Check HA Discount Settings PIN first
+        s = get_discount_settings()
+        if s and s.discount_pin:
+            import hashlib
+            stored = s.get_password("discount_pin")
+            if str(stored).strip() == str(pin).strip():
+                return {"valid": True, "supervisor": frappe.session.user, "message": "Approved"}
+            return {"valid": False, "message": "Invalid PIN. Please try again."}
+        # Fall back to HA POS Settings user mapping passwords
         settings = frappe.get_single("HA POS Settings")
         for row in settings.user_mapping:
             if not row.password:
@@ -155,10 +131,36 @@ def validate_supervisor_pin(pin):
         return {"valid": False, "message": str(e)}
 
 @frappe.whitelist()
-def create_layby_payment(sales_order, paid_to, paid_amount, mode_of_payment, posting_date, paid_from=None, reference_no="", remarks="", customer=None, is_receipt=0):
-    """Create and submit a Payment Entry linked to a Sales Order"""
-    import json
-    
+def check_user_discount_permission():
+    user = frappe.session.user
+    try:
+        settings = frappe.get_single("HA POS Settings")
+        for row in settings.user_mapping:
+            if row.user == user:
+                return {"has_permission": bool(row.allow_add_discount)}
+        return {"has_permission": False}
+    except Exception:
+        return {"has_permission": False}
+
+@frappe.whitelist()
+def save_discount_log(**kwargs):
+    log = {
+        "applied_by": frappe.session.user,
+        "item_code": kwargs.get("item_code", ""),
+        "item_name": kwargs.get("item_name", ""),
+        "discount_amount": float(kwargs.get("discount_amount", 0) or 0),
+        "discount_pct": float(kwargs.get("discount_pct", 0) or 0),
+        "original_price": float(kwargs.get("original_price", 0) or 0),
+        "final_price": float(kwargs.get("final_price", 0) or 0),
+    }
+    frappe.log_error(json.dumps(log, indent=2), "Discount Applied - " + log["item_name"])
+    return {"success": True}
+
+@frappe.whitelist()
+def create_layby_payment(sales_order, paid_to, paid_amount, mode_of_payment,
+                          posting_date, paid_from=None, reference_no="",
+                          remarks="", customer=None, is_receipt=0):
+    """Create Payment Entry for layby or receipt"""
     if frappe.utils.cint(is_receipt) and customer and not sales_order:
         pe = frappe.get_doc({
             "doctype": "Payment Entry",
@@ -166,7 +168,9 @@ def create_layby_payment(sales_order, paid_to, paid_amount, mode_of_payment, pos
             "posting_date": posting_date,
             "party_type": "Customer",
             "party": customer,
-            "paid_from": paid_from or frappe.db.get_value("Company", frappe.defaults.get_user_default("Company"), "default_receivable_account"),
+            "paid_from": paid_from or frappe.db.get_value(
+                "Company", frappe.defaults.get_user_default("Company"),
+                "default_receivable_account"),
             "paid_to": paid_to,
             "paid_amount": frappe.utils.flt(paid_amount),
             "received_amount": frappe.utils.flt(paid_amount),
@@ -177,24 +181,31 @@ def create_layby_payment(sales_order, paid_to, paid_amount, mode_of_payment, pos
         pe.flags.ignore_permissions = True
         pe.insert()
         pe.submit()
+        # Record in HA Receipt Transaction
+        try:
+            frappe.get_doc({
+                "doctype": "HA Receipt Transaction",
+                "payment_entry": pe.name,
+                "customer": customer,
+                "date": posting_date,
+                "amount": frappe.utils.flt(paid_amount),
+                "account_paid_to": paid_to,
+                "mode_of_payment": mode_of_payment,
+            }).insert(ignore_permissions=True)
+        except Exception:
+            pass
         frappe.db.commit()
         return {"success": True, "payment_entry": pe.name}
 
     so = frappe.get_doc("Sales Order", sales_order)
     paid_amount = float(paid_amount)
-    
-    # Check already paid
     already_paid = frappe.db.sql("""
         SELECT COALESCE(SUM(per.allocated_amount), 0)
         FROM `tabPayment Entry Reference` per
         INNER JOIN `tabPayment Entry` pe ON pe.name = per.parent
         WHERE per.reference_doctype = 'Sales Order'
-        AND per.reference_name = %s
-        AND pe.docstatus = 1
+        AND per.reference_name = %s AND pe.docstatus = 1
     """, sales_order)[0][0] or 0
-
-    if already_paid >= paid_amount:
-        return {"success": False, "message": "Payment already exists for this amount"}
 
     new_payment = paid_amount - already_paid
     outstanding = so.grand_total - already_paid
@@ -224,31 +235,51 @@ def create_layby_payment(sales_order, paid_to, paid_amount, mode_of_payment, pos
     pe.flags.ignore_permissions = True
     pe.insert()
     pe.submit()
+    # Record in HA Layby Transaction
+    try:
+        existing = frappe.db.get_value("HA Layby Transaction", {"sales_order": sales_order})
+        if existing:
+            doc = frappe.get_doc("HA Layby Transaction", existing)
+            doc.paid_amount = (doc.paid_amount or 0) + new_payment
+            doc.status = "Paid" if doc.paid_amount >= so.grand_total else "Partially Paid"
+            doc.save(ignore_permissions=True)
+        else:
+            frappe.get_doc({
+                "doctype": "HA Layby Transaction",
+                "sales_order": sales_order,
+                "customer": so.customer,
+                "date": posting_date,
+                "total_amount": so.grand_total,
+                "paid_amount": new_payment,
+                "status": "Partially Paid" if new_payment < so.grand_total else "Paid",
+            }).insert(ignore_permissions=True)
+    except Exception:
+        pass
     frappe.db.commit()
-    
     return {"success": True, "payment_entry": pe.name}
 
 @frappe.whitelist()
 def get_customer_outstanding(customer):
-    """Get total outstanding amount for a customer from Sales Orders"""
     result = frappe.db.sql("""
         SELECT COALESCE(SUM(so.grand_total - so.advance_paid), 0) as outstanding
         FROM `tabSales Order` so
-        WHERE so.docstatus = 1
-        AND so.customer = %s
+        WHERE so.docstatus = 1 AND so.customer = %s
         AND (so.grand_total - so.advance_paid) > 0
     """, customer, as_dict=True)
     return {"outstanding": float(result[0].outstanding) if result else 0}
 
 @frappe.whitelist()
 def get_cash_bank_accounts():
-    """Get all Cash and Bank accounts"""
     accounts = frappe.db.sql("""
         SELECT name, account_type, account_currency
         FROM `tabAccount`
         WHERE account_type IN ('Cash', 'Bank')
-        AND is_group = 0
-        AND company = %s
+        AND is_group = 0 AND company = %s
         ORDER BY account_type, name
     """, frappe.defaults.get_user_default("Company"), as_dict=True)
     return accounts
+
+@frappe.whitelist()
+def get_discount_settings_for_pos():
+    """Combined settings for POS — reads from HA Discount Settings"""
+    return get_ha_discount_settings()
