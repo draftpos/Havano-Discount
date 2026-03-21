@@ -499,7 +499,13 @@
         }
         const base = getBase();
         const minPrice = base - maxPct / 100 * base;
-        rangeInfo.textContent = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} \u2013 ${base.toFixed(2)}`;
+        let rangeText = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} \u2013 ${base.toFixed(2)}`;
+        if (res.min_qty > 0 || res.max_qty > 0) {
+          rangeText += ` | Qty: ${res.min_qty}`;
+          if (res.max_qty > 0)
+            rangeText += ` \u2013 ${res.max_qty}`;
+        }
+        rangeInfo.textContent = rangeText;
         rangeInfo.style.display = "block";
       }
       loadRule();
@@ -563,4 +569,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.6SA4LEE3.js.map
+//# sourceMappingURL=discount.bundle.JKFBUSEH.js.map
