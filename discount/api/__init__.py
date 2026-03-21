@@ -51,7 +51,8 @@ def get_item_discount(item_code):
     item_rules = frappe.db.sql("""
         SELECT pr.name, pr.title, pr.rate_or_discount, pr.discount_percentage,
                pr.discount_amount, pr.rate, pr.rule_description,
-               pr.threshold_percentage, pr.valid_from, pr.valid_upto
+               pr.threshold_percentage, pr.valid_from, pr.valid_upto,
+               pr.min_qty, pr.max_qty
         FROM `tabPricing Rule` pr
         INNER JOIN `tabPricing Rule Item Code` pri ON pri.parent = pr.name
         WHERE pr.disable = 0 AND pr.selling = 1
@@ -70,7 +71,8 @@ def get_item_discount(item_code):
             group_rules = frappe.db.sql("""
                 SELECT pr.name, pr.title, pr.rate_or_discount, pr.discount_percentage,
                        pr.discount_amount, pr.rate, pr.rule_description,
-                       pr.threshold_percentage, pr.valid_from, pr.valid_upto
+                       pr.threshold_percentage, pr.valid_from, pr.valid_upto,
+                       pr.min_qty, pr.max_qty
                 FROM `tabPricing Rule` pr
                 INNER JOIN `tabPricing Rule Item Group` prig ON prig.parent = pr.name
                 WHERE pr.disable = 0 AND pr.selling = 1
@@ -108,6 +110,8 @@ def get_item_discount(item_code):
             "discount_value": discount_value,
             "min_discount": rule_min,
             "max_discount": rule_max,
+            "min_qty": float(rule.get("min_qty") or 0),
+            "max_qty": float(rule.get("max_qty") or 0),
             "description": rule.get("rule_description") or "",
             "match_type": rule.get("match_type"),
         }

@@ -434,12 +434,16 @@
 
       hasRule = !!res.pricing_rule;
       discountPct = res.discount_value || 0;
-      // maxPct is the discount_percentage from pricing rule
       maxPct = res.discount_value || res.max_discount || 0;
       if (res.rule_name) { badge.textContent = res.rule_name; badge.style.display = "inline"; }
       const base = getBase();
       const minPrice = base - (maxPct / 100) * base;
-      rangeInfo.textContent = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} – ${base.toFixed(2)}`;
+      let rangeText = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} – ${base.toFixed(2)}`;
+      if (res.min_qty > 0 || res.max_qty > 0) {
+        rangeText += ` | Qty: ${res.min_qty}`;
+        if (res.max_qty > 0) rangeText += ` – ${res.max_qty}`;
+      }
+      rangeInfo.textContent = rangeText;
       rangeInfo.style.display = "block";
     }
     loadRule();
