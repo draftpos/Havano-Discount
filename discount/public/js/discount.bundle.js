@@ -225,15 +225,19 @@
     if (!priceContainer) return;
     const priceInput = priceContainer.querySelector("input");
 
-    // Pre-fill quantity from selected cart item
+    // Get quantity input from dialog
     const qtyLabel = [...dialogEl.querySelectorAll("label")].find(l => l.textContent.trim() === "Quantity");
     const qtyInput = qtyLabel ? qtyLabel.closest("div")?.querySelector("input") : null;
-    if (qtyInput) {
-      const currentQty = window.__ha_selected_item?.quantity || window.__ha_selected_item?.qty || 1;
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-      setter.call(qtyInput, String(currentQty));
-      qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
-      qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+    // Pre-fill quantity from cart item
+    if (qtyInput && window.__ha_selected_item) {
+      const currentQty = window.__ha_selected_item.quantity || window.__ha_selected_item.qty || 1;
+      if (!qtyInput.value || qtyInput.value === "") {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(qtyInput, String(currentQty));
+        qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+        qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     }
 
     const section = document.createElement("div");
@@ -246,7 +250,8 @@
         <span id="ha-disc-badge" style="display:none;font-size:0.7rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;font-weight:500;margin-left:auto;"></span>
       </div>
       <div id="ha-disc-no-rule" style="display:none;font-size:0.8rem;color:#9ca3af;font-style:italic;">No discount available for this item.</div>
-      <div id="ha-disc-rule-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;line-height:1.6;"></div>
+      <div id="ha-disc-rule-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;line-height:1.8;"></div>
+      <div id="ha-disc-qty-err" style="display:none;font-size:0.8rem;color:#dc2626;padding:6px 10px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;margin-top:6px;"></div>
       <div id="ha-disc-pin-area" style="display:none;margin-top:10px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;">
         <div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;font-weight:500;">Enter supervisor PIN:</div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -261,13 +266,13 @@
         <div id="ha-pin-err" style="font-size:0.75rem;color:#dc2626;margin-top:6px;display:none;"></div>
       </div>
       <div id="ha-disc-fields" style="display:none;margin-top:10px;">
-        <div id="ha-disc-auto-applied" style="padding:10px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin-bottom:10px;display:none;">
-          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:4px;">✓ Discount Applied (from pricing rule)</div>
+        <div id="ha-disc-auto-applied" style="padding:10px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin-bottom:10px;">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:4px;">✓ Discount Applied (pricing rule)</div>
           <div id="ha-disc-auto-info" style="font-size:0.85rem;color:#374151;"></div>
         </div>
         <div style="margin-bottom:8px;">
-          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">Adjust discount (enter new price or leave as applied):</label>
-          <input id="ha-disc-adjust" type="number" step="0.01" min="0" placeholder="New price"
+          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">Adjust price (within allowed range):</label>
+          <input id="ha-disc-adjust" type="number" step="0.01" min="0" placeholder="Enter new price"
             style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;font-size:0.875rem;box-sizing:border-box;background:#fff;"/>
           <div id="ha-disc-adjust-hint" style="font-size:0.72rem;color:#6b7280;margin-top:3px;"></div>
         </div>
@@ -281,13 +286,13 @@
     const noRule = section.querySelector("#ha-disc-no-rule");
     const ruleInfo = section.querySelector("#ha-disc-rule-info");
     const badge = section.querySelector("#ha-disc-badge");
+    const qtyErr = section.querySelector("#ha-disc-qty-err");
     const pinArea = section.querySelector("#ha-disc-pin-area");
     const pinInput = section.querySelector("#ha-pin-input");
     const pinOk = section.querySelector("#ha-pin-ok");
     const pinCancel = section.querySelector("#ha-pin-cancel");
     const pinErr = section.querySelector("#ha-pin-err");
     const fields = section.querySelector("#ha-disc-fields");
-    const autoApplied = section.querySelector("#ha-disc-auto-applied");
     const autoInfo = section.querySelector("#ha-disc-auto-info");
     const adjustInput = section.querySelector("#ha-disc-adjust");
     const adjustHint = section.querySelector("#ha-disc-adjust-hint");
@@ -296,8 +301,11 @@
 
     let pinApproved = false;
     let ruleData = null;
+    let originalPrice = 0;
+    let discountApplied = false;
 
-    function getBase() { return parseFloat(priceInput?.value || 0); }
+    function getBase() { return originalPrice || parseFloat(priceInput?.value || 0); }
+    function getCurrentQty() { return parseFloat(qtyInput?.value || window.__ha_selected_item?.quantity || 1); }
 
     function applyToReact(val) {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
@@ -306,88 +314,102 @@
       priceInput.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
+    function validateQty() {
+      if (!ruleData) return true;
+      const qty = getCurrentQty();
+      if (ruleData.min_qty > 0 && qty < ruleData.min_qty) {
+        qtyErr.textContent = `⚠ Discount requires min quantity of ${ruleData.min_qty}. Current: ${qty}`;
+        qtyErr.style.display = "block";
+        return false;
+      }
+      if (ruleData.max_qty > 0 && qty > ruleData.max_qty) {
+        qtyErr.textContent = `⚠ Discount only applies to max quantity of ${ruleData.max_qty}. Current: ${qty}`;
+        qtyErr.style.display = "block";
+        return false;
+      }
+      qtyErr.style.display = "none";
+      return true;
+    }
+
     function applyRuleDiscount() {
       if (!ruleData) return;
-      const base = getBase();
+      if (!validateQty()) {
+        // Restore original price if qty invalid
+        applyToReact(originalPrice);
+        return;
+      }
+      const base = originalPrice;
       let newPrice = base;
       let info = "";
 
       if (ruleData.rate_or_discount === "Discount Amount" && ruleData.discount_amount > 0) {
         newPrice = base - ruleData.discount_amount;
-        info = `${ruleData.discount_amount} off → New price: ${newPrice.toFixed(2)}`;
-      } else if (ruleData.discount_value > 0) {
+        info = `${ruleData.discount_amount} amount off → New price: ${newPrice.toFixed(2)}`;
+      } else {
         newPrice = base - (ruleData.discount_value / 100) * base;
         info = `${ruleData.discount_value}% off → New price: ${newPrice.toFixed(2)} (save ${((ruleData.discount_value / 100) * base).toFixed(2)})`;
       }
 
       if (newPrice < 0) newPrice = 0;
       autoInfo.textContent = info;
-      autoApplied.style.display = "block";
       applyToReact(newPrice);
 
-      // Set hint for adjust field
-      const minPrice = ruleData.max_discount > 0 ? base - (ruleData.max_discount / 100) * base : 0;
-      const maxPrice = base;
-      adjustHint.textContent = `Allowed price range: ${minPrice.toFixed(2)} – ${maxPrice.toFixed(2)}`;
+      // Set adjust hint
+      const minPrice = ruleData.max_discount > 0 ? base - (ruleData.max_discount / 100) * base : newPrice;
+      adjustHint.textContent = `Allowed: ${minPrice.toFixed(2)} – ${base.toFixed(2)}`;
       adjustInput.placeholder = newPrice.toFixed(2);
+      discountApplied = true;
     }
 
-    // Adjust input
+    // Watch qty input changes to re-validate
+    if (qtyInput) {
+      qtyInput.addEventListener("input", () => {
+        if (discountApplied) validateQty();
+      });
+    }
+
+    // Adjust input validation
     adjustInput.addEventListener("input", () => {
-      const base = getBase();
+      const base = originalPrice;
       const newP = parseFloat(adjustInput.value);
       adjustErr.style.display = "none";
       adjustOk.style.display = "none";
       if (isNaN(newP) || adjustInput.value === "") return;
 
-      // Validate against ALL pricing rule limits
+      const qty = getCurrentQty();
+
+      // Qty limits
+      if (ruleData?.min_qty > 0 && qty < ruleData.min_qty) {
+        adjustErr.textContent = `⚠ Min qty is ${ruleData.min_qty}. Current qty: ${qty}`;
+        adjustErr.style.display = "block"; applyToReact(base); return;
+      }
+      if (ruleData?.max_qty > 0 && qty > ruleData.max_qty) {
+        adjustErr.textContent = `⚠ Max qty is ${ruleData.max_qty}. Current qty: ${qty}`;
+        adjustErr.style.display = "block"; applyToReact(base); return;
+      }
+      // Amount limits
+      if (ruleData?.min_amt > 0 && newP < ruleData.min_amt) {
+        adjustErr.textContent = `⚠ Min price is ${ruleData.min_amt}.`;
+        adjustErr.style.display = "block"; applyRuleDiscount(); return;
+      }
+      if (ruleData?.max_amt > 0 && newP > ruleData.max_amt) {
+        adjustErr.textContent = `⚠ Max price is ${ruleData.max_amt}.`;
+        adjustErr.style.display = "block"; applyRuleDiscount(); return;
+      }
+      // Discount % limits
       const maxDisc = ruleData?.max_discount || 100;
       const minDisc = ruleData?.min_discount || 0;
       const minPrice = base - (maxDisc / 100) * base;
-      const maxPrice = minDisc > 0 ? base - (minDisc / 100) * base : base;
-      const pctApplied = ((base - newP) / base) * 100;
-      const qty = parseFloat(qtyInput?.value || 1);
-
-      // Check qty limits
-      if (ruleData?.min_qty > 0 && qty < ruleData.min_qty) {
-        adjustErr.textContent = `⚠ Min quantity is ${ruleData.min_qty} for this discount.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
-      }
-      if (ruleData?.max_qty > 0 && qty > ruleData.max_qty) {
-        adjustErr.textContent = `⚠ Max quantity is ${ruleData.max_qty} for this discount.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
-      }
-      // Check amount limits
-      if (ruleData?.min_amt > 0 && newP < ruleData.min_amt) {
-        adjustErr.textContent = `⚠ Min price is ${ruleData.min_amt}. Restored.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
-      }
-      if (ruleData?.max_amt > 0 && newP > ruleData.max_amt) {
-        adjustErr.textContent = `⚠ Max price is ${ruleData.max_amt}. Restored.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
-      }
-      // Check discount % limits
-      if (pctApplied > maxDisc) {
+      const pct = ((base - newP) / base) * 100;
+      if (newP < minPrice || pct > maxDisc) {
         adjustErr.textContent = `⚠ Max discount is ${maxDisc}%. Min price: ${minPrice.toFixed(2)}. Restored.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
-      }
-      if (minDisc > 0 && pctApplied < minDisc && newP < base) {
-        adjustErr.textContent = `⚠ Min discount is ${minDisc}%. Max price: ${maxPrice.toFixed(2)}. Restored.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
+        adjustErr.style.display = "block"; applyRuleDiscount(); return;
       }
       if (newP > base) {
-        adjustErr.textContent = `⚠ Cannot exceed original price ${base.toFixed(2)}. Restored.`;
-        adjustErr.style.display = "block";
-        applyRuleDiscount(); return;
+        adjustErr.textContent = `⚠ Cannot exceed original ${base.toFixed(2)}.`;
+        adjustErr.style.display = "block"; applyRuleDiscount(); return;
       }
-      const pct = ((base - newP) / base) * 100;
-      adjustOk.textContent = `✓ New price: ${newP.toFixed(2)} (${pct.toFixed(1)}% discount)`;
+      adjustOk.textContent = `✓ New price: ${newP.toFixed(2)} (${pct.toFixed(1)}% off)`;
       adjustOk.style.display = "block";
       applyToReact(newP);
     });
@@ -403,13 +425,20 @@
       pinErr.style.display = "none";
       const res = await apiFetch("discount.api.validate_supervisor_pin", { pin });
       if (res?.valid) {
+        // Check qty before approving
+        if (!validateQty()) {
+          pinOk.textContent = "Approve"; pinOk.disabled = false;
+          pinInput.value = "";
+          return;
+        }
         pinApproved = true;
         pinArea.style.display = "none";
         chk.checked = true;
+        // Disable checkbox to prevent re-apply
+        chk.disabled = true;
+        chk.title = "Discount already applied";
         fields.style.display = "block";
         pinInput.value = "";
-        // Mark this item as having discount applied
-        window.__ha_discount_applied_to = window.__ha_selected_item?.name;
         applyRuleDiscount();
       } else {
         pinErr.textContent = res?.message || "Invalid PIN.";
@@ -421,25 +450,25 @@
     }
 
     pinOk.onclick = doApprove;
-    pinCancel.onclick = () => { pinArea.style.display = "none"; chk.checked = false; pinInput.value = ""; pinErr.style.display = "none"; };
+    pinCancel.onclick = () => {
+      pinArea.style.display = "none";
+      chk.checked = false;
+      pinInput.value = "";
+      pinErr.style.display = "none";
+    };
     pinInput.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); doApprove(); } });
     pinInput.addEventListener("keyup", e => e.stopPropagation());
 
-    // Checkbox
     chk.addEventListener("change", () => {
       if (!chk.checked) {
         pinArea.style.display = "none";
         fields.style.display = "none";
         pinApproved = false;
         pinInput.value = "";
-        // Restore original price
-        if (ruleData) {
-          const base = window.__ha_selected_item?.price || window.__ha_selected_item?.standard_rate || getBase();
-          applyToReact(parseFloat(base));
-        }
+        applyToReact(originalPrice);
         return;
       }
-      if (pinApproved) { fields.style.display = "block"; applyRuleDiscount(); return; }
+      if (pinApproved) { fields.style.display = "block"; return; }
       chk.checked = false;
       pinArea.style.display = "block";
       setTimeout(() => pinInput.focus(), 50);
@@ -449,6 +478,7 @@
     async function loadRule() {
       const code = window.__ha_selected_item_code;
       const res = code ? await apiFetch("discount.api.get_item_discount", { item_code: code }) : null;
+
       if (!res || !res.has_discount) {
         noRule.style.display = "block";
         chk.disabled = true;
@@ -457,23 +487,33 @@
         if (lbl) lbl.style.cssText = "font-size:0.875rem;font-weight:600;color:#9ca3af;cursor:not-allowed;user-select:none;pointer-events:none;";
         return;
       }
+
       ruleData = res;
+      originalPrice = getBase();
+
       if (res.rule_name) { badge.textContent = res.rule_name; badge.style.display = "inline"; }
 
-      // Build rule info text
-      let info = [];
+      // Build detailed rule info
+      const infoLines = [];
       if (res.rate_or_discount === "Discount Amount") {
-        info.push(`Discount: ${res.discount_amount} off`);
+        infoLines.push(`Discount: ${res.discount_amount} amount off`);
       } else {
-        info.push(`Discount: ${res.discount_value}%`);
+        infoLines.push(`Discount: ${res.discount_value}%`);
       }
-      if (res.max_discount > 0) info.push(`Max: ${res.max_discount}%`);
-      if (res.min_qty > 0) info.push(`Min qty: ${res.min_qty}`);
-      if (res.max_qty > 0) info.push(`Max qty: ${res.max_qty}`);
-      if (res.min_amt > 0) info.push(`Min amount: ${res.min_amt}`);
-      if (res.max_amt > 0) info.push(`Max amount: ${res.max_amt}`);
-      ruleInfo.textContent = info.join(" | ");
+      if (res.min_qty > 0 || res.max_qty > 0) {
+        infoLines.push(`Qty range: ${res.min_qty || 0} – ${res.max_qty || "∞"}`);
+      }
+      if (res.min_amt > 0 || res.max_amt > 0) {
+        infoLines.push(`Amount range: ${res.min_amt || 0} – ${res.max_amt || "∞"}`);
+      }
+      if (res.max_discount > 0 && res.max_discount < 100) {
+        infoLines.push(`Max discount: ${res.max_discount}%`);
+      }
+      ruleInfo.innerHTML = infoLines.join("<br/>");
       ruleInfo.style.display = "block";
+
+      // Check qty immediately
+      validateQty();
     }
     loadRule();
   }

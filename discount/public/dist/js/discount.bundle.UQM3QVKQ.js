@@ -597,9 +597,36 @@
         }
       }, 300);
     }
+    function readCartStoreItem() {
+      var _a, _b, _c;
+      try {
+        const root = document.getElementById("root");
+        if (!root)
+          return;
+        const fiberKey = Object.keys(root).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+        if (!fiberKey)
+          return;
+        let fiber = root[fiberKey];
+        let depth = 0;
+        while (fiber && depth < 200) {
+          if ((_c = (_b = (_a = fiber.memoizedState) == null ? void 0 : _a.queue) == null ? void 0 : _b.lastRenderedState) == null ? void 0 : _c.selectedCartItem) {
+            const item = fiber.memoizedState.queue.lastRenderedState.selectedCartItem;
+            if (item) {
+              window.__ha_selected_item = item;
+              window.__ha_selected_item_code = item.item_code || item.name || "";
+            }
+            break;
+          }
+          fiber = fiber.child || fiber.sibling || fiber.return;
+          depth++;
+        }
+      } catch (e) {
+      }
+    }
     async function boot() {
       await getSettings();
       console.log("[Discount App] Settings loaded:", settings);
+      setInterval(readCartStoreItem, 500);
       waitFor("#root > *", () => {
         setTimeout(() => {
           injectLaybyButton();
@@ -616,4 +643,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.EMHNJOKD.js.map
+//# sourceMappingURL=discount.bundle.UQM3QVKQ.js.map
