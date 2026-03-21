@@ -531,10 +531,14 @@
         const pl = [...dialog.querySelectorAll("label")].find((l) => l.textContent.trim() === "Price");
         if (!pl)
           return;
-        if (!window.__ha_selected_item_code) {
-          const heading = dialog.querySelector("h2,h3,[class*='title'],[class*='header']");
-          if (heading)
-            window.__ha_selected_item_code = heading.textContent.trim();
+        const heading = dialog.querySelector("[data-slot='dialog-title'], h2, .text-lg.font-semibold, .font-semibold");
+        if (heading) {
+          const itemName = heading.textContent.trim();
+          if (itemName)
+            window.__ha_selected_item_code = itemName;
+        }
+        if (window.__ha_selected_item) {
+          window.__ha_selected_item_code = window.__ha_selected_item.item_code || window.__ha_selected_item.name || window.__ha_selected_item_code;
         }
         injectDiscountIntoDialog(dialog);
       });
@@ -579,4 +583,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.542ZPDMJ.js.map
+//# sourceMappingURL=discount.bundle.B4UF325A.js.map

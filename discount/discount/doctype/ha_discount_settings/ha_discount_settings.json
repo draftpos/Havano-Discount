@@ -9,10 +9,7 @@
   "allow_receipts",
   "column_break_1",
   "require_pin_for_discount",
-  "discount_pin",
-  "section_break_1",
-  "min_discount_pct",
-  "max_discount_pct"
+  "discount_pin"
  ],
  "fields": [
   {
@@ -52,25 +49,6 @@
    "label": "Discount PIN",
    "depends_on": "require_pin_for_discount",
    "description": "PIN required to apply discount. Leave blank to use HA POS Settings user passwords."
-  },
-  {
-   "fieldname": "section_break_1",
-   "fieldtype": "Section Break",
-   "label": "Discount Limits"
-  },
-  {
-   "default": "0",
-   "fieldname": "min_discount_pct",
-   "fieldtype": "Float",
-   "label": "Minimum Discount %",
-   "description": "0 = no minimum"
-  },
-  {
-   "default": "100",
-   "fieldname": "max_discount_pct",
-   "fieldtype": "Float",
-   "label": "Maximum Discount %",
-   "description": "100 = no maximum"
   }
  ],
  "issingle": 1,
