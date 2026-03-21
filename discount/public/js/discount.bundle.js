@@ -228,11 +228,12 @@
     // Pre-fill quantity from selected cart item
     const qtyLabel = [...dialogEl.querySelectorAll("label")].find(l => l.textContent.trim() === "Quantity");
     const qtyInput = qtyLabel ? qtyLabel.closest("div")?.querySelector("input") : null;
-    if (qtyInput && window.__ha_selected_item && !qtyInput.value) {
-      const currentQty = window.__ha_selected_item.quantity || window.__ha_selected_item.qty || 1;
+    if (qtyInput) {
+      const currentQty = window.__ha_selected_item?.quantity || window.__ha_selected_item?.qty || 1;
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
       setter.call(qtyInput, String(currentQty));
       qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
     const section = document.createElement("div");
@@ -339,23 +340,44 @@
       adjustOk.style.display = "none";
       if (isNaN(newP) || adjustInput.value === "") return;
 
-      // Validate against pricing rule limits
+      // Validate against ALL pricing rule limits
       const maxDisc = ruleData?.max_discount || 100;
+      const minDisc = ruleData?.min_discount || 0;
       const minPrice = base - (maxDisc / 100) * base;
+      const maxPrice = minDisc > 0 ? base - (minDisc / 100) * base : base;
+      const pctApplied = ((base - newP) / base) * 100;
+      const qty = parseFloat(qtyInput?.value || 1);
 
-      // Also validate min_amt / max_amt
+      // Check qty limits
+      if (ruleData?.min_qty > 0 && qty < ruleData.min_qty) {
+        adjustErr.textContent = `⚠ Min quantity is ${ruleData.min_qty} for this discount.`;
+        adjustErr.style.display = "block";
+        applyRuleDiscount(); return;
+      }
+      if (ruleData?.max_qty > 0 && qty > ruleData.max_qty) {
+        adjustErr.textContent = `⚠ Max quantity is ${ruleData.max_qty} for this discount.`;
+        adjustErr.style.display = "block";
+        applyRuleDiscount(); return;
+      }
+      // Check amount limits
       if (ruleData?.min_amt > 0 && newP < ruleData.min_amt) {
-        adjustErr.textContent = `⚠ Below min amount ${ruleData.min_amt}. Restored.`;
+        adjustErr.textContent = `⚠ Min price is ${ruleData.min_amt}. Restored.`;
         adjustErr.style.display = "block";
         applyRuleDiscount(); return;
       }
       if (ruleData?.max_amt > 0 && newP > ruleData.max_amt) {
-        adjustErr.textContent = `⚠ Above max amount ${ruleData.max_amt}. Restored.`;
+        adjustErr.textContent = `⚠ Max price is ${ruleData.max_amt}. Restored.`;
         adjustErr.style.display = "block";
         applyRuleDiscount(); return;
       }
-      if (newP < minPrice) {
+      // Check discount % limits
+      if (pctApplied > maxDisc) {
         adjustErr.textContent = `⚠ Max discount is ${maxDisc}%. Min price: ${minPrice.toFixed(2)}. Restored.`;
+        adjustErr.style.display = "block";
+        applyRuleDiscount(); return;
+      }
+      if (minDisc > 0 && pctApplied < minDisc && newP < base) {
+        adjustErr.textContent = `⚠ Min discount is ${minDisc}%. Max price: ${maxPrice.toFixed(2)}. Restored.`;
         adjustErr.style.display = "block";
         applyRuleDiscount(); return;
       }
@@ -386,6 +408,8 @@
         chk.checked = true;
         fields.style.display = "block";
         pinInput.value = "";
+        // Mark this item as having discount applied
+        window.__ha_discount_applied_to = window.__ha_selected_item?.name;
         applyRuleDiscount();
       } else {
         pinErr.textContent = res?.message || "Invalid PIN.";
@@ -466,18 +490,27 @@
       const dialogs = [...document.querySelectorAll('[role="dialog"]')];
       const dialog = dialogs.find(d => d.style.pointerEvents === "auto") || dialogs[dialogs.length - 1];
       if (!dialog || dialog.querySelector(".ha-discount-section")) return;
+      // Check if discount already applied to this item
+      if (window.__ha_discount_applied_to === (window.__ha_selected_item?.name)) return;
       const pl = [...dialog.querySelectorAll("label")].find(l => l.textContent.trim() === "Price");
       if (!pl) return;
       // Grab item code from event detail if available, else from dialog heading
-      // Get item code from dialog title
+      // Get item from dialog - try heading first
       const heading = dialog.querySelector("[data-slot='dialog-title'], h2, .text-lg.font-semibold, .font-semibold");
       if (heading) {
         const itemName = heading.textContent.trim();
         if (itemName) window.__ha_selected_item_code = itemName;
       }
-      // Also try from window.__ha_selected_item
+      // Override with actual item_code if available from cart store via window
       if (window.__ha_selected_item) {
-        window.__ha_selected_item_code = window.__ha_selected_item.item_code || window.__ha_selected_item.name || window.__ha_selected_item_code;
+        window.__ha_selected_item_code = window.__ha_selected_item.item_code ||
+                                          window.__ha_selected_item.name ||
+                                          window.__ha_selected_item_code;
+        // Reset discount applied flag when new item selected
+        if (window.__ha_last_item_name !== window.__ha_selected_item.name) {
+          window.__ha_last_item_name = window.__ha_selected_item.name;
+          window.__ha_discount_applied_to = null;
+        }
       }
       injectDiscountIntoDialog(dialog);
     });
@@ -490,6 +523,8 @@
     window.addEventListener("ha:cart-dialog-close", () => {
       document.querySelectorAll(".ha-discount-section").forEach(el => el.remove());
     });
+    // Also clear on new item selection
+    window.__ha_discount_applied_to = null;
   }
 
   // ════════════════════════════
