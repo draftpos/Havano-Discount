@@ -37,6 +37,15 @@ def get_item_discount(item_code):
     s = get_discount_settings()
     if not s or not s.allow_discount:
         return {"has_discount": False, "reason": "Discount not enabled"}
+    # Try to resolve item_name to item_code
+    resolved = frappe.db.get_value("Item", {"item_name": item_code}, "name")
+    if resolved:
+        item_code = resolved
+    # Also try direct lookup
+    if not frappe.db.exists("Item", item_code):
+        resolved2 = frappe.db.get_value("Item", {"item_code": item_code}, "name")
+        if resolved2:
+            item_code = resolved2
     today = frappe.utils.today()
     rule = None
     item_rules = frappe.db.sql("""
