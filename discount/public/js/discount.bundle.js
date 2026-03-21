@@ -543,9 +543,38 @@
   // ════════════════════════════
   // BOOT
   // ════════════════════════════
+  // Read selected item from Zustand cart store
+  function readCartStoreItem() {
+    try {
+      // Zustand stores state in __zustandStore or similar
+      // Try to find it via React fiber
+      const root = document.getElementById("root");
+      if (!root) return;
+      const fiberKey = Object.keys(root).find(k => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      if (!fiberKey) return;
+      let fiber = root[fiberKey];
+      // Walk fiber tree to find zustand store
+      let depth = 0;
+      while (fiber && depth < 200) {
+        if (fiber.memoizedState?.queue?.lastRenderedState?.selectedCartItem) {
+          const item = fiber.memoizedState.queue.lastRenderedState.selectedCartItem;
+          if (item) {
+            window.__ha_selected_item = item;
+            window.__ha_selected_item_code = item.item_code || item.name || "";
+          }
+          break;
+        }
+        fiber = fiber.child || fiber.sibling || fiber.return;
+        depth++;
+      }
+    } catch(e) {}
+  }
+
   async function boot() {
     await getSettings();
     console.log("[Discount App] Settings loaded:", settings);
+    // Periodically sync selected cart item
+    setInterval(readCartStoreItem, 500);
     waitFor("#root > *", () => {
       setTimeout(() => {
         injectLaybyButton();

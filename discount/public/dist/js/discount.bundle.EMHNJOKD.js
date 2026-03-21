@@ -270,7 +270,7 @@
       };
     }
     function injectDiscountIntoDialog(dialogEl) {
-      var _a;
+      var _a, _b, _c;
       if (!settings.allow_discount)
         return;
       if (dialogEl.querySelector(".ha-discount-section"))
@@ -284,11 +284,12 @@
       const priceInput = priceContainer.querySelector("input");
       const qtyLabel = [...dialogEl.querySelectorAll("label")].find((l) => l.textContent.trim() === "Quantity");
       const qtyInput = qtyLabel ? (_a = qtyLabel.closest("div")) == null ? void 0 : _a.querySelector("input") : null;
-      if (qtyInput && window.__ha_selected_item && !qtyInput.value) {
-        const currentQty = window.__ha_selected_item.quantity || window.__ha_selected_item.qty || 1;
+      if (qtyInput) {
+        const currentQty = ((_b = window.__ha_selected_item) == null ? void 0 : _b.quantity) || ((_c = window.__ha_selected_item) == null ? void 0 : _c.qty) || 1;
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
         setter.call(qtyInput, String(currentQty));
         qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+        qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
       const section = document.createElement("div");
       section.className = "ha-discount-section";
@@ -387,21 +388,43 @@
         if (isNaN(newP) || adjustInput.value === "")
           return;
         const maxDisc = (ruleData == null ? void 0 : ruleData.max_discount) || 100;
+        const minDisc = (ruleData == null ? void 0 : ruleData.min_discount) || 0;
         const minPrice = base - maxDisc / 100 * base;
+        const maxPrice = minDisc > 0 ? base - minDisc / 100 * base : base;
+        const pctApplied = (base - newP) / base * 100;
+        const qty = parseFloat((qtyInput == null ? void 0 : qtyInput.value) || 1);
+        if ((ruleData == null ? void 0 : ruleData.min_qty) > 0 && qty < ruleData.min_qty) {
+          adjustErr.textContent = `\u26A0 Min quantity is ${ruleData.min_qty} for this discount.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        if ((ruleData == null ? void 0 : ruleData.max_qty) > 0 && qty > ruleData.max_qty) {
+          adjustErr.textContent = `\u26A0 Max quantity is ${ruleData.max_qty} for this discount.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
         if ((ruleData == null ? void 0 : ruleData.min_amt) > 0 && newP < ruleData.min_amt) {
-          adjustErr.textContent = `\u26A0 Below min amount ${ruleData.min_amt}. Restored.`;
+          adjustErr.textContent = `\u26A0 Min price is ${ruleData.min_amt}. Restored.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
         if ((ruleData == null ? void 0 : ruleData.max_amt) > 0 && newP > ruleData.max_amt) {
-          adjustErr.textContent = `\u26A0 Above max amount ${ruleData.max_amt}. Restored.`;
+          adjustErr.textContent = `\u26A0 Max price is ${ruleData.max_amt}. Restored.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
-        if (newP < minPrice) {
+        if (pctApplied > maxDisc) {
           adjustErr.textContent = `\u26A0 Max discount is ${maxDisc}%. Min price: ${minPrice.toFixed(2)}. Restored.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        if (minDisc > 0 && pctApplied < minDisc && newP < base) {
+          adjustErr.textContent = `\u26A0 Min discount is ${minDisc}%. Max price: ${maxPrice.toFixed(2)}. Restored.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
@@ -420,6 +443,7 @@
       adjustInput.addEventListener("keydown", (e) => e.stopPropagation());
       adjustInput.addEventListener("keyup", (e) => e.stopPropagation());
       async function doApprove() {
+        var _a2;
         const pin = pinInput.value.trim();
         if (!pin) {
           pinInput.focus();
@@ -435,6 +459,7 @@
           chk.checked = true;
           fields.style.display = "block";
           pinInput.value = "";
+          window.__ha_discount_applied_to = (_a2 = window.__ha_selected_item) == null ? void 0 : _a2.name;
           applyRuleDiscount();
         } else {
           pinErr.textContent = (res == null ? void 0 : res.message) || "Invalid PIN.";
@@ -461,14 +486,14 @@
       });
       pinInput.addEventListener("keyup", (e) => e.stopPropagation());
       chk.addEventListener("change", () => {
-        var _a2, _b;
+        var _a2, _b2;
         if (!chk.checked) {
           pinArea.style.display = "none";
           fields.style.display = "none";
           pinApproved = false;
           pinInput.value = "";
           if (ruleData) {
-            const base = ((_a2 = window.__ha_selected_item) == null ? void 0 : _a2.price) || ((_b = window.__ha_selected_item) == null ? void 0 : _b.standard_rate) || getBase();
+            const base = ((_a2 = window.__ha_selected_item) == null ? void 0 : _a2.price) || ((_b2 = window.__ha_selected_item) == null ? void 0 : _b2.standard_rate) || getBase();
             applyToReact(parseFloat(base));
           }
           return;
@@ -524,9 +549,12 @@
       if (!settings.allow_discount)
         return;
       const observer = new MutationObserver(() => {
+        var _a;
         const dialogs = [...document.querySelectorAll('[role="dialog"]')];
         const dialog = dialogs.find((d) => d.style.pointerEvents === "auto") || dialogs[dialogs.length - 1];
         if (!dialog || dialog.querySelector(".ha-discount-section"))
+          return;
+        if (window.__ha_discount_applied_to === ((_a = window.__ha_selected_item) == null ? void 0 : _a.name))
           return;
         const pl = [...dialog.querySelectorAll("label")].find((l) => l.textContent.trim() === "Price");
         if (!pl)
@@ -539,6 +567,10 @@
         }
         if (window.__ha_selected_item) {
           window.__ha_selected_item_code = window.__ha_selected_item.item_code || window.__ha_selected_item.name || window.__ha_selected_item_code;
+          if (window.__ha_last_item_name !== window.__ha_selected_item.name) {
+            window.__ha_last_item_name = window.__ha_selected_item.name;
+            window.__ha_discount_applied_to = null;
+          }
         }
         injectDiscountIntoDialog(dialog);
       });
@@ -551,6 +583,7 @@
       window.addEventListener("ha:cart-dialog-close", () => {
         document.querySelectorAll(".ha-discount-section").forEach((el) => el.remove());
       });
+      window.__ha_discount_applied_to = null;
     }
     function watchRoutes() {
       let last = location.pathname;
@@ -583,4 +616,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.B4UF325A.js.map
+//# sourceMappingURL=discount.bundle.EMHNJOKD.js.map
