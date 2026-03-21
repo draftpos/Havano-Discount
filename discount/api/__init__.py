@@ -112,6 +112,10 @@ def get_item_discount(item_code):
             "max_discount": rule_max,
             "min_qty": float(rule.get("min_qty") or 0),
             "max_qty": float(rule.get("max_qty") or 0),
+            "min_amt": float(rule.get("min_amt") or 0),
+            "max_amt": float(rule.get("max_amt") or 0),
+            "rate_or_discount": rule.get("rate_or_discount", "Discount Percentage"),
+            "discount_amount": float(rule.get("discount_amount") or 0),
             "description": rule.get("rule_description") or "",
             "match_type": rule.get("match_type"),
         }

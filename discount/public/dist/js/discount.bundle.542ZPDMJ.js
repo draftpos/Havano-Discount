@@ -270,6 +270,7 @@
       };
     }
     function injectDiscountIntoDialog(dialogEl) {
+      var _a;
       if (!settings.allow_discount)
         return;
       if (dialogEl.querySelector(".ha-discount-section"))
@@ -281,6 +282,14 @@
       if (!priceContainer)
         return;
       const priceInput = priceContainer.querySelector("input");
+      const qtyLabel = [...dialogEl.querySelectorAll("label")].find((l) => l.textContent.trim() === "Quantity");
+      const qtyInput = qtyLabel ? (_a = qtyLabel.closest("div")) == null ? void 0 : _a.querySelector("input") : null;
+      if (qtyInput && window.__ha_selected_item && !qtyInput.value) {
+        const currentQty = window.__ha_selected_item.quantity || window.__ha_selected_item.qty || 1;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(qtyInput, String(currentQty));
+        qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
       const section = document.createElement("div");
       section.className = "ha-discount-section";
       section.style.cssText = "margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;";
@@ -291,7 +300,7 @@
         <span id="ha-disc-badge" style="display:none;font-size:0.7rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;font-weight:500;margin-left:auto;"></span>
       </div>
       <div id="ha-disc-no-rule" style="display:none;font-size:0.8rem;color:#9ca3af;font-style:italic;">No discount available for this item.</div>
-      <div id="ha-disc-range-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;"></div>
+      <div id="ha-disc-rule-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;line-height:1.6;"></div>
       <div id="ha-disc-pin-area" style="display:none;margin-top:10px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;">
         <div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;font-weight:500;">Enter supervisor PIN:</div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -306,34 +315,23 @@
         <div id="ha-pin-err" style="font-size:0.75rem;color:#dc2626;margin-top:6px;display:none;"></div>
       </div>
       <div id="ha-disc-fields" style="display:none;margin-top:10px;">
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button id="ha-btn-pct" type="button"
-            style="flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;">
-            % Percentage
-          </button>
-          <button id="ha-btn-amt" type="button"
-            style="flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;">
-            $ Amount
-          </button>
+        <div id="ha-disc-auto-applied" style="padding:10px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin-bottom:10px;display:none;">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:4px;">\u2713 Discount Applied (from pricing rule)</div>
+          <div id="ha-disc-auto-info" style="font-size:0.85rem;color:#374151;"></div>
         </div>
-        <div id="ha-pct-section" style="display:none;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;text-align:center;">
-          <div style="font-size:0.8rem;color:#6b7280;margin-bottom:6px;">Pricing rule discount:</div>
-          <div id="ha-pct-value" style="font-size:2rem;font-weight:700;color:#374151;"></div>
-          <div id="ha-pct-newprice" style="font-size:0.9rem;color:#059669;font-weight:600;margin-top:4px;"></div>
-        </div>
-        <div id="ha-amt-section" style="display:none;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
-          <div id="ha-amt-hint" style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px;background:#f0f9ff;border-radius:4px;"></div>
-          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">New Price</label>
-          <input id="ha-amt-input" type="number" step="0.01" min="0" placeholder="Enter new price"
+        <div style="margin-bottom:8px;">
+          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">Adjust discount (enter new price or leave as applied):</label>
+          <input id="ha-disc-adjust" type="number" step="0.01" min="0" placeholder="New price"
             style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;font-size:0.875rem;box-sizing:border-box;background:#fff;"/>
-          <div id="ha-amt-ok" style="margin-top:6px;font-size:0.8rem;color:#059669;font-weight:500;display:none;"></div>
-          <div id="ha-amt-err" style="margin-top:6px;font-size:0.8rem;color:#dc2626;padding:6px 10px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;display:none;"></div>
+          <div id="ha-disc-adjust-hint" style="font-size:0.72rem;color:#6b7280;margin-top:3px;"></div>
         </div>
+        <div id="ha-disc-adjust-ok" style="font-size:0.8rem;color:#059669;font-weight:500;display:none;margin-top:4px;"></div>
+        <div id="ha-disc-adjust-err" style="font-size:0.8rem;color:#dc2626;padding:6px 10px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;display:none;margin-top:4px;"></div>
       </div>`;
       priceContainer.after(section);
       const chk = section.querySelector("#ha-disc-chk");
       const noRule = section.querySelector("#ha-disc-no-rule");
-      const rangeInfo = section.querySelector("#ha-disc-range-info");
+      const ruleInfo = section.querySelector("#ha-disc-rule-info");
       const badge = section.querySelector("#ha-disc-badge");
       const pinArea = section.querySelector("#ha-disc-pin-area");
       const pinInput = section.querySelector("#ha-pin-input");
@@ -341,20 +339,14 @@
       const pinCancel = section.querySelector("#ha-pin-cancel");
       const pinErr = section.querySelector("#ha-pin-err");
       const fields = section.querySelector("#ha-disc-fields");
-      const btnPct = section.querySelector("#ha-btn-pct");
-      const btnAmt = section.querySelector("#ha-btn-amt");
-      const pctSection = section.querySelector("#ha-pct-section");
-      const amtSection = section.querySelector("#ha-amt-section");
-      const pctValue = section.querySelector("#ha-pct-value");
-      const pctNewPrice = section.querySelector("#ha-pct-newprice");
-      const amtHint = section.querySelector("#ha-amt-hint");
-      const amtInput = section.querySelector("#ha-amt-input");
-      const amtOk = section.querySelector("#ha-amt-ok");
-      const amtErr = section.querySelector("#ha-amt-err");
+      const autoApplied = section.querySelector("#ha-disc-auto-applied");
+      const autoInfo = section.querySelector("#ha-disc-auto-info");
+      const adjustInput = section.querySelector("#ha-disc-adjust");
+      const adjustHint = section.querySelector("#ha-disc-adjust-hint");
+      const adjustOk = section.querySelector("#ha-disc-adjust-ok");
+      const adjustErr = section.querySelector("#ha-disc-adjust-err");
       let pinApproved = false;
-      let discountPct = 0;
-      let maxPct = 0;
-      let hasRule = false;
+      let ruleData = null;
       function getBase() {
         return parseFloat((priceInput == null ? void 0 : priceInput.value) || 0);
       }
@@ -364,6 +356,69 @@
         priceInput.dispatchEvent(new Event("input", { bubbles: true }));
         priceInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      function applyRuleDiscount() {
+        if (!ruleData)
+          return;
+        const base = getBase();
+        let newPrice = base;
+        let info = "";
+        if (ruleData.rate_or_discount === "Discount Amount" && ruleData.discount_amount > 0) {
+          newPrice = base - ruleData.discount_amount;
+          info = `${ruleData.discount_amount} off \u2192 New price: ${newPrice.toFixed(2)}`;
+        } else if (ruleData.discount_value > 0) {
+          newPrice = base - ruleData.discount_value / 100 * base;
+          info = `${ruleData.discount_value}% off \u2192 New price: ${newPrice.toFixed(2)} (save ${(ruleData.discount_value / 100 * base).toFixed(2)})`;
+        }
+        if (newPrice < 0)
+          newPrice = 0;
+        autoInfo.textContent = info;
+        autoApplied.style.display = "block";
+        applyToReact(newPrice);
+        const minPrice = ruleData.max_discount > 0 ? base - ruleData.max_discount / 100 * base : 0;
+        const maxPrice = base;
+        adjustHint.textContent = `Allowed price range: ${minPrice.toFixed(2)} \u2013 ${maxPrice.toFixed(2)}`;
+        adjustInput.placeholder = newPrice.toFixed(2);
+      }
+      adjustInput.addEventListener("input", () => {
+        const base = getBase();
+        const newP = parseFloat(adjustInput.value);
+        adjustErr.style.display = "none";
+        adjustOk.style.display = "none";
+        if (isNaN(newP) || adjustInput.value === "")
+          return;
+        const maxDisc = (ruleData == null ? void 0 : ruleData.max_discount) || 100;
+        const minPrice = base - maxDisc / 100 * base;
+        if ((ruleData == null ? void 0 : ruleData.min_amt) > 0 && newP < ruleData.min_amt) {
+          adjustErr.textContent = `\u26A0 Below min amount ${ruleData.min_amt}. Restored.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        if ((ruleData == null ? void 0 : ruleData.max_amt) > 0 && newP > ruleData.max_amt) {
+          adjustErr.textContent = `\u26A0 Above max amount ${ruleData.max_amt}. Restored.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        if (newP < minPrice) {
+          adjustErr.textContent = `\u26A0 Max discount is ${maxDisc}%. Min price: ${minPrice.toFixed(2)}. Restored.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        if (newP > base) {
+          adjustErr.textContent = `\u26A0 Cannot exceed original price ${base.toFixed(2)}. Restored.`;
+          adjustErr.style.display = "block";
+          applyRuleDiscount();
+          return;
+        }
+        const pct = (base - newP) / base * 100;
+        adjustOk.textContent = `\u2713 New price: ${newP.toFixed(2)} (${pct.toFixed(1)}% discount)`;
+        adjustOk.style.display = "block";
+        applyToReact(newP);
+      });
+      adjustInput.addEventListener("keydown", (e) => e.stopPropagation());
+      adjustInput.addEventListener("keyup", (e) => e.stopPropagation());
       async function doApprove() {
         const pin = pinInput.value.trim();
         if (!pin) {
@@ -380,6 +435,7 @@
           chk.checked = true;
           fields.style.display = "block";
           pinInput.value = "";
+          applyRuleDiscount();
         } else {
           pinErr.textContent = (res == null ? void 0 : res.message) || "Invalid PIN.";
           pinErr.style.display = "block";
@@ -404,67 +460,22 @@
         }
       });
       pinInput.addEventListener("keyup", (e) => e.stopPropagation());
-      btnPct.onclick = () => {
-        btnPct.style.cssText = "flex:1;padding:10px;border:2px solid #374151;border-radius:8px;background:#374151;color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;";
-        btnAmt.style.cssText = "flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;";
-        pctSection.style.display = "block";
-        amtSection.style.display = "none";
-        const base = getBase();
-        const newP = base - discountPct / 100 * base;
-        pctValue.textContent = discountPct + "%";
-        pctNewPrice.textContent = `New price: ${newP.toFixed(2)} (save ${(discountPct / 100 * base).toFixed(2)})`;
-        applyToReact(newP);
-      };
-      btnAmt.onclick = () => {
-        btnAmt.style.cssText = "flex:1;padding:10px;border:2px solid #374151;border-radius:8px;background:#374151;color:#fff;font-size:0.875rem;font-weight:600;cursor:pointer;";
-        btnPct.style.cssText = "flex:1;padding:10px;border:2px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;font-size:0.875rem;font-weight:600;cursor:pointer;";
-        amtSection.style.display = "block";
-        pctSection.style.display = "none";
-        amtErr.style.display = "none";
-        amtOk.style.display = "none";
-        amtInput.value = "";
-        const base = getBase();
-        const minPrice = base - maxPct / 100 * base;
-        amtHint.textContent = `Allowed price range: ${minPrice.toFixed(2)} \u2013 ${base.toFixed(2)} (max ${maxPct}% discount)`;
-        amtInput.focus();
-      };
-      amtInput.addEventListener("input", () => {
-        const base = getBase();
-        const newP = parseFloat(amtInput.value);
-        amtErr.style.display = "none";
-        amtOk.style.display = "none";
-        if (isNaN(newP) || amtInput.value === "")
-          return;
-        const minPrice = base - maxPct / 100 * base;
-        const pct = (base - newP) / base * 100;
-        if (newP > base) {
-          amtErr.textContent = `\u26A0 Price cannot exceed original price ${base.toFixed(2)}. Restored.`;
-          amtErr.style.display = "block";
-          applyToReact(base);
-          return;
-        }
-        if (newP < minPrice) {
-          amtErr.textContent = `\u26A0 Exceeds max discount of ${maxPct}%. Min price is ${minPrice.toFixed(2)}. Restored.`;
-          amtErr.style.display = "block";
-          applyToReact(base);
-          return;
-        }
-        amtOk.textContent = `\u2713 Discount: ${pct.toFixed(1)}% \u2014 New price: ${newP.toFixed(2)}`;
-        amtOk.style.display = "block";
-        applyToReact(newP);
-      });
-      amtInput.addEventListener("keydown", (e) => e.stopPropagation());
-      amtInput.addEventListener("keyup", (e) => e.stopPropagation());
       chk.addEventListener("change", () => {
+        var _a2, _b;
         if (!chk.checked) {
           pinArea.style.display = "none";
           fields.style.display = "none";
           pinApproved = false;
           pinInput.value = "";
+          if (ruleData) {
+            const base = ((_a2 = window.__ha_selected_item) == null ? void 0 : _a2.price) || ((_b = window.__ha_selected_item) == null ? void 0 : _b.standard_rate) || getBase();
+            applyToReact(parseFloat(base));
+          }
           return;
         }
         if (pinApproved) {
           fields.style.display = "block";
+          applyRuleDiscount();
           return;
         }
         chk.checked = false;
@@ -478,35 +489,34 @@
           noRule.style.display = "block";
           chk.disabled = true;
           chk.style.cssText = "width:16px;height:16px;opacity:0.4;cursor:not-allowed;pointer-events:none;";
-          const lbl = section.querySelector('label[for="ha-disc-chk"]');
+          const lbl = section.querySelector("label[for='ha-disc-chk']");
           if (lbl)
             lbl.style.cssText = "font-size:0.875rem;font-weight:600;color:#9ca3af;cursor:not-allowed;user-select:none;pointer-events:none;";
-          section.addEventListener("click", (e) => {
-            if (e.target === chk || e.target === lbl) {
-              e.preventDefault();
-              e.stopImmediatePropagation();
-              chk.checked = false;
-            }
-          }, true);
           return;
         }
-        hasRule = !!res.pricing_rule;
-        discountPct = res.discount_value || 0;
-        maxPct = res.discount_value || res.max_discount || 0;
+        ruleData = res;
         if (res.rule_name) {
           badge.textContent = res.rule_name;
           badge.style.display = "inline";
         }
-        const base = getBase();
-        const minPrice = base - maxPct / 100 * base;
-        let rangeText = `Pricing rule: ${discountPct}% discount | Allowed price: ${minPrice.toFixed(2)} \u2013 ${base.toFixed(2)}`;
-        if (res.min_qty > 0 || res.max_qty > 0) {
-          rangeText += ` | Qty: ${res.min_qty}`;
-          if (res.max_qty > 0)
-            rangeText += ` \u2013 ${res.max_qty}`;
+        let info = [];
+        if (res.rate_or_discount === "Discount Amount") {
+          info.push(`Discount: ${res.discount_amount} off`);
+        } else {
+          info.push(`Discount: ${res.discount_value}%`);
         }
-        rangeInfo.textContent = rangeText;
-        rangeInfo.style.display = "block";
+        if (res.max_discount > 0)
+          info.push(`Max: ${res.max_discount}%`);
+        if (res.min_qty > 0)
+          info.push(`Min qty: ${res.min_qty}`);
+        if (res.max_qty > 0)
+          info.push(`Max qty: ${res.max_qty}`);
+        if (res.min_amt > 0)
+          info.push(`Min amount: ${res.min_amt}`);
+        if (res.max_amt > 0)
+          info.push(`Max amount: ${res.max_amt}`);
+        ruleInfo.textContent = info.join(" | ");
+        ruleInfo.style.display = "block";
       }
       loadRule();
     }
@@ -569,4 +579,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.JKFBUSEH.js.map
+//# sourceMappingURL=discount.bundle.542ZPDMJ.js.map
