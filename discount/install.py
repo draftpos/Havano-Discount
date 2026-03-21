@@ -28,7 +28,7 @@ def setup_ha_discount_settings():
             )
             if not existing or existing[0][0] is None:
                 frappe.db.sql(
-                    "INSERT INTO `tabSingles` (doctype, field, value) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE value=value",
+                    "INSERT INTO `tabSingles` (doctype, field, value) VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE value=VALUES(value)",
                     ("HA Discount Settings", field, val)
                 )
         print("✓ HA Discount Settings initialized")
