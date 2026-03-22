@@ -2,7 +2,9 @@
 
 (function () {
   "use strict";
-  if (!window.location.pathname.includes("/dashboard")) return;
+  const isPos = window.location.pathname.includes("/dashboard");
+  const isSalesOrder = window.location.pathname.includes("/sales-order/");
+  if (!isPos && !isSalesOrder) return;
 
   let settings = {};
 
@@ -47,7 +49,10 @@
       btn.textContent = "Layby";
       btn.onmouseenter = () => btn.style.background = "#d97706";
       btn.onmouseleave = () => btn.style.background = "#f59e0b";
-      btn.onclick = () => window.open(`${window.location.origin}/app/sales-order/new-sales-order-1?layby=1`, "_blank");
+      btn.onclick = () => {
+        localStorage.setItem("ha_layby_opening", "1");
+        window.open(`${window.location.origin}/app/sales-order/new-sales-order-1?layby=1`, "_blank");
+      };
       takeaway.parentNode.insertBefore(btn, takeaway.nextSibling);
     };
     tryInject();
@@ -229,16 +234,16 @@
     const qtyLabel = [...dialogEl.querySelectorAll("label")].find(l => l.textContent.trim() === "Quantity");
     const qtyInput = qtyLabel ? qtyLabel.closest("div")?.querySelector("input") : null;
 
-    // Pre-fill quantity from cart item
-    if (qtyInput && window.__ha_selected_item) {
-      const currentQty = window.__ha_selected_item.quantity || window.__ha_selected_item.qty || 1;
-      if (!qtyInput.value || qtyInput.value === "") {
+    // Pre-fill quantity from window.__ha_selected_qty set by observer
+    setTimeout(() => {
+      if (qtyInput && (!qtyInput.value || parseFloat(qtyInput.value) < 1)) {
+        const qty = String(window.__ha_selected_qty || 1);
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-        setter.call(qtyInput, String(currentQty));
+        setter.call(qtyInput, qty);
         qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
         qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
-    }
+    }, 300);
 
     const section = document.createElement("div");
     section.className = "ha-discount-section";
@@ -305,7 +310,26 @@
     let discountApplied = false;
 
     function getBase() { return originalPrice || parseFloat(priceInput?.value || 0); }
-    function getCurrentQty() { return parseFloat(qtyInput?.value || window.__ha_selected_item?.quantity || 1); }
+    function getCurrentQty() {
+      // Qty is stored in React state only — read from menu-item badge in cart
+      // The menu-item text = itemName + qtyNumber e.g. "Sugar5"
+      const itemName = window.__ha_selected_item_code || window.__ha_last_dialog_title || "";
+      if (itemName) {
+        const menuItems = [...document.querySelectorAll(".menu-item.cursor-pointer")];
+        for (const el of menuItems) {
+          const txt = el.textContent.trim();
+          // Check if this card contains our item name
+          const cardHeader = el.querySelector("[class*='card-header']");
+          const headerTxt = cardHeader ? cardHeader.textContent.trim() : txt;
+          // headerTxt = "Sugar1" or "Spaghetti" — extract trailing number
+          if (headerTxt.startsWith(itemName) || txt.startsWith(itemName)) {
+            const match = headerTxt.match(/(\d+)$/);
+            if (match) return parseFloat(match[1]);
+          }
+        }
+      }
+      return window.__ha_dialog_qty || 1;
+    }
 
     function applyToReact(val) {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
@@ -361,10 +385,21 @@
       discountApplied = true;
     }
 
-    // Watch qty input changes to re-validate
+    // Watch qty input changes to re-validate and re-apply discount live
     if (qtyInput) {
       qtyInput.addEventListener("input", () => {
-        if (discountApplied) validateQty();
+        if (discountApplied) {
+          validateQty();
+          applyRuleDiscount();
+        }
+        // Also revalidate adjust input if user typed a custom price
+        if (adjustInput.value) adjustInput.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      qtyInput.addEventListener("change", () => {
+        if (discountApplied) {
+          validateQty();
+          applyRuleDiscount();
+        }
       });
     }
 
@@ -497,17 +532,20 @@
       const infoLines = [];
       if (res.rate_or_discount === "Discount Amount") {
         infoLines.push(`Discount: ${res.discount_amount} amount off`);
+        if (res.max_discount > 0) {
+          infoLines.push(`&nbsp;&nbsp;↳ Max allowed: ${res.max_discount}% off`);
+        }
       } else {
         infoLines.push(`Discount: ${res.discount_value}%`);
+        if (res.max_discount > 0) {
+          infoLines.push(`&nbsp;&nbsp;↳ Max allowed: ${res.max_discount}% off`);
+        }
       }
       if (res.min_qty > 0 || res.max_qty > 0) {
-        infoLines.push(`Qty range: ${res.min_qty || 0} – ${res.max_qty || "∞"}`);
+        infoLines.push(`Qty range: ${res.min_qty || 0} – ${res.max_qty > 0 ? res.max_qty : "∞"}`);
       }
       if (res.min_amt > 0 || res.max_amt > 0) {
-        infoLines.push(`Amount range: ${res.min_amt || 0} – ${res.max_amt || "∞"}`);
-      }
-      if (res.max_discount > 0 && res.max_discount < 100) {
-        infoLines.push(`Max discount: ${res.max_discount}%`);
+        infoLines.push(`Amount range: ${res.min_amt || 0} – ${res.max_amt > 0 ? res.max_amt : "∞"}`);
       }
       ruleInfo.innerHTML = infoLines.join("<br/>");
       ruleInfo.style.display = "block";
@@ -515,7 +553,42 @@
       // Check qty immediately
       validateQty();
     }
-    loadRule();
+    // Poll qty input value — numpad sets it via direct DOM, not React props
+    // so MutationObserver on attributes won't work; we poll instead
+    let lastQty = 0;
+    const qtyPollTimer = setInterval(() => {
+      const cur = parseFloat(qtyInput?.value) || 0;
+      if (cur !== lastQty && cur > 0) {
+        lastQty = cur;
+        window.__ha_dialog_qty = cur;
+        if (discountApplied) {
+          validateQty();
+          applyRuleDiscount();
+        } else if (ruleData) {
+          validateQty();
+        }
+      }
+    }, 300);
+
+    // Also intercept numpad clicks directly
+    setTimeout(() => {
+      const numpad = document.querySelector('.update-cart-keyboard-box');
+      if (numpad) {
+        numpad.addEventListener('click', () => {
+          setTimeout(() => {
+            const cur = parseFloat(qtyInput?.value) || 0;
+            if (cur > 0) {
+              window.__ha_dialog_qty = cur;
+              if (discountApplied) { validateQty(); applyRuleDiscount(); }
+              else if (ruleData) validateQty();
+            }
+          }, 80);
+        });
+      }
+    }, 300);
+
+    // Delay loadRule so numpad has time to set initial qty
+    setTimeout(loadRule, 600);
   }
 
 
@@ -535,36 +608,40 @@
       const pl = [...dialog.querySelectorAll("label")].find(l => l.textContent.trim() === "Price");
       if (!pl) return;
       // Grab item code from event detail if available, else from dialog heading
-      // Get item from dialog - try heading first
-      const heading = dialog.querySelector("[data-slot='dialog-title'], h2, .text-lg.font-semibold, .font-semibold");
+      // Get item name from dialog title
+      const heading = dialog.querySelector("[data-slot='dialog-title'], h2");
       if (heading) {
         const itemName = heading.textContent.trim();
-        if (itemName) window.__ha_selected_item_code = itemName;
-      }
-      // Override with actual item_code if available from cart store via window
-      if (window.__ha_selected_item) {
-        window.__ha_selected_item_code = window.__ha_selected_item.item_code ||
-                                          window.__ha_selected_item.name ||
-                                          window.__ha_selected_item_code;
-        // Reset discount applied flag when new item selected
-        if (window.__ha_last_item_name !== window.__ha_selected_item.name) {
-          window.__ha_last_item_name = window.__ha_selected_item.name;
-          window.__ha_discount_applied_to = null;
+        if (itemName && itemName !== window.__ha_last_dialog_title) {
+          window.__ha_last_dialog_title = itemName;
+          window.__ha_selected_item_code = itemName;
+          // Try to find qty from cart DOM
+          // Cart items typically show qty as "x2" or in a span
+          // Read qty directly from the dialog qty input after React renders
+          window.__ha_selected_qty = 1;
+          setTimeout(() => {
+            const qtyLbl = [...dialog.querySelectorAll("label")]
+              .find(l => l.textContent.trim() === "Quantity");
+            const qtyInp = qtyLbl ? qtyLbl.closest("div")?.querySelector("input") : null;
+            if (qtyInp && qtyInp.value) {
+              window.__ha_selected_qty = parseFloat(qtyInp.value) || 1;
+            }
+          }, 200);
         }
       }
       injectDiscountIntoDialog(dialog);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Also keep event listener for item_code capture
     window.addEventListener("ha:cart-dialog-open", (e) => {
-      if (e.detail?.item) window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
+      if (e.detail?.item) {
+        window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
+        window.__ha_selected_item = e.detail.item;
+      }
     });
     window.addEventListener("ha:cart-dialog-close", () => {
       document.querySelectorAll(".ha-discount-section").forEach(el => el.remove());
     });
-    // Also clear on new item selection
-    window.__ha_discount_applied_to = null;
   }
 
   // ════════════════════════════
@@ -581,36 +658,131 @@
   }
 
   // ════════════════════════════
+  // LAYBY RECEIPT BUTTON (Sales Order page)
+  // ════════════════════════════
+  function injectLaybyReceiptBtn() {
+    if (!window.location.pathname.includes("/sales-order/")) return;
+    if (document.getElementById("ha-layby-dl-btn")) return;
+    const ca = document.querySelector(".custom-actions");
+    if (!ca) return;
+
+    const btn = document.createElement("button");
+    btn.id = "ha-layby-dl-btn";
+    btn.className = "btn btn-warning";
+    btn.textContent = "Download Layby Receipt";
+    btn.style.cssText = "margin-left:8px;font-weight:bold;";
+    btn.onclick = () => {
+      const frm = window.cur_frm;
+      if (!frm) return;
+      const items = frm.doc.items || [];
+      const lines = [
+        "=============================",
+        "         LAYBY RECEIPT       ",
+        "=============================",
+        "Order     : " + frm.doc.name,
+        "Date      : " + frm.doc.transaction_date,
+        "Customer  : " + (frm.doc.customer_name || frm.doc.customer || "Walk-in"),
+        "-----------------------------",
+        "ITEMS:"
+      ];
+      items.forEach(i => lines.push("  " + i.item_name + " x" + i.qty + "  @  " + i.rate + "  =  " + i.amount));
+      lines.push("-----------------------------");
+      lines.push("TOTAL     : " + frm.doc.currency + " " + frm.doc.grand_total);
+      lines.push("=============================");
+      lines.push("  Thank you for your Layby!  ");
+      lines.push("  Please keep this receipt.  ");
+      lines.push("=============================");
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "Layby-" + frm.doc.name + ".txt";
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      frappe.show_alert({ message: "Receipt downloaded! Redirecting...", indicator: "green" }, 3);
+      setTimeout(() => {
+        if (window.opener) window.close();
+        else window.location.href = "/dashboard";
+      }, 2500);
+    };
+    ca.appendChild(btn);
+  }
+
+  function watchSalesOrderPage() {
+    if (!window.location.pathname.includes("/sales-order/")) return;
+    // Try multiple times as Frappe rebuilds the page-head
+    [500, 1000, 2000, 3000].forEach(t => setTimeout(injectLaybyReceiptBtn, t));
+    // Also watch for DOM changes
+    const observer = new MutationObserver(() => injectLaybyReceiptBtn());
+    const pageHead = document.querySelector(".page-head");
+    if (pageHead) observer.observe(pageHead, { childList: true, subtree: true });
+  }
+
+  // ════════════════════════════
   // BOOT
   // ════════════════════════════
-  // Read selected item from Zustand cart store
-  function readCartStoreItem() {
-    try {
-      // Zustand stores state in __zustandStore or similar
-      // Try to find it via React fiber
-      const root = document.getElementById("root");
-      if (!root) return;
-      const fiberKey = Object.keys(root).find(k => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
-      if (!fiberKey) return;
-      let fiber = root[fiberKey];
-      // Walk fiber tree to find zustand store
-      let depth = 0;
-      while (fiber && depth < 200) {
-        if (fiber.memoizedState?.queue?.lastRenderedState?.selectedCartItem) {
-          const item = fiber.memoizedState.queue.lastRenderedState.selectedCartItem;
-          if (item) {
-            window.__ha_selected_item = item;
-            window.__ha_selected_item_code = item.item_code || item.name || "";
-          }
-          break;
-        }
-        fiber = fiber.child || fiber.sibling || fiber.return;
-        depth++;
-      }
-    } catch(e) {}
+  // No-op - we read qty directly from dialog input
+  function readCartStoreItem() {}
+
+  
+  function watchSalesOrderPageEarly() {
+    function injectBtn() {
+      if (document.getElementById("ha-layby-dl-btn")) return;
+      const target = document.querySelector(".custom-actions");
+      if (!target) return;
+      const frm = window.cur_frm;
+      if (!frm || frm.doc.docstatus !== 1) return;
+      const btn = document.createElement("button");
+      btn.id = "ha-layby-dl-btn";
+      btn.className = "btn btn-warning";
+      btn.textContent = "Download Layby Receipt";
+      btn.style.cssText = "margin-left:8px;font-weight:bold;";
+      btn.onclick = function() {
+        const items = frm.doc.items || [];
+        const lines = [
+          "=============================",
+          "         LAYBY RECEIPT       ",
+          "=============================",
+          "Order     : " + frm.doc.name,
+          "Date      : " + frm.doc.transaction_date,
+          "Customer  : " + (frm.doc.customer_name || frm.doc.customer || "Walk-in"),
+          "-----------------------------",
+          "ITEMS:"
+        ];
+        items.forEach(function(i) {
+          lines.push("  " + i.item_name + " x" + i.qty + "  @  " + i.rate + "  =  " + i.amount);
+        });
+        lines.push("-----------------------------");
+        lines.push("TOTAL     : " + frm.doc.currency + " " + frm.doc.grand_total);
+        lines.push("=============================");
+        lines.push("  Thank you for your Layby!  ");
+        lines.push("  Please keep this receipt.  ");
+        lines.push("=============================");
+        const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Layby-" + frm.doc.name + ".txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        frappe.show_alert({ message: "Receipt downloaded! Redirecting...", indicator: "green" }, 3);
+        setTimeout(function() {
+          if (window.opener) window.close();
+          else window.location.href = "/dashboard";
+        }, 2500);
+      };
+      target.appendChild(btn);
+    }
+    [500, 1000, 2000, 3000].forEach(function(t) { setTimeout(injectBtn, t); });
+    setTimeout(function() {
+      const ph = document.querySelector(".page-head");
+      if (ph) new MutationObserver(injectBtn).observe(ph, { childList: true, subtree: true });
+    }, 500);
   }
 
   async function boot() {
+    if (isSalesOrder) { watchSalesOrderPageEarly(); return; }
     await getSettings();
     console.log("[Discount App] Settings loaded:", settings);
     // Periodically sync selected cart item
@@ -621,6 +793,7 @@
         injectReceiptButton();
         watchForDialog();
         watchRoutes();
+        watchSalesOrderPage();
       }, 1500);
     });
   }

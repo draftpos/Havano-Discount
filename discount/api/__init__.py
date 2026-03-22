@@ -52,7 +52,7 @@ def get_item_discount(item_code):
         SELECT pr.name, pr.title, pr.rate_or_discount, pr.discount_percentage,
                pr.discount_amount, pr.rate, pr.rule_description,
                pr.threshold_percentage, pr.valid_from, pr.valid_upto,
-               pr.min_qty, pr.max_qty
+               pr.min_qty, pr.max_qty, pr.min_amt, pr.max_amt
         FROM `tabPricing Rule` pr
         INNER JOIN `tabPricing Rule Item Code` pri ON pri.parent = pr.name
         WHERE pr.disable = 0 AND pr.selling = 1
@@ -72,7 +72,7 @@ def get_item_discount(item_code):
                 SELECT pr.name, pr.title, pr.rate_or_discount, pr.discount_percentage,
                        pr.discount_amount, pr.rate, pr.rule_description,
                        pr.threshold_percentage, pr.valid_from, pr.valid_upto,
-                       pr.min_qty, pr.max_qty
+                       pr.min_qty, pr.max_qty, pr.min_amt, pr.max_amt
                 FROM `tabPricing Rule` pr
                 INNER JOIN `tabPricing Rule Item Group` prig ON prig.parent = pr.name
                 WHERE pr.disable = 0 AND pr.selling = 1
@@ -100,8 +100,13 @@ def get_item_discount(item_code):
         # Use global min/max from HA Discount Settings if set
         global_min = float(s.min_discount_pct or 0)
         global_max = float(s.max_discount_pct or 100)
-        rule_min = max(global_min, max(0, discount_value - threshold) if threshold else global_min)
-        rule_max = min(global_max, discount_value + threshold if threshold else global_max)
+        if threshold:
+            rule_min = max(global_min, discount_value - threshold)
+            rule_max = min(global_max, discount_value + threshold)
+        else:
+            # No threshold — discount_value is both the applied and max discount
+            rule_min = global_min
+            rule_max = discount_value  # e.g. 5% discount = 5% is the max
         return {
             "has_discount": True,
             "rule_name": rule.get("title") or rule.get("name"),

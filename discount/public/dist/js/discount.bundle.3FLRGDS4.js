@@ -19,7 +19,9 @@
   // ../discount/discount/public/js/discount.bundle.js
   (function() {
     "use strict";
-    if (!window.location.pathname.includes("/dashboard"))
+    const isPos = window.location.pathname.includes("/dashboard");
+    const isSalesOrder = window.location.pathname.includes("/sales-order/");
+    if (!isPos && !isSalesOrder)
       return;
     let settings = {};
     async function apiFetch(method, args) {
@@ -70,7 +72,10 @@
         btn.textContent = "Layby";
         btn.onmouseenter = () => btn.style.background = "#d97706";
         btn.onmouseleave = () => btn.style.background = "#f59e0b";
-        btn.onclick = () => window.open(`${window.location.origin}/app/sales-order/new-sales-order-1?layby=1`, "_blank");
+        btn.onclick = () => {
+          localStorage.setItem("ha_layby_opening", "1");
+          window.open(`${window.location.origin}/app/sales-order/new-sales-order-1?layby=1`, "_blank");
+        };
         takeaway.parentNode.insertBefore(btn, takeaway.nextSibling);
       };
       tryInject();
@@ -270,7 +275,7 @@
       };
     }
     function injectDiscountIntoDialog(dialogEl) {
-      var _a, _b, _c;
+      var _a;
       if (!settings.allow_discount)
         return;
       if (dialogEl.querySelector(".ha-discount-section"))
@@ -284,13 +289,15 @@
       const priceInput = priceContainer.querySelector("input");
       const qtyLabel = [...dialogEl.querySelectorAll("label")].find((l) => l.textContent.trim() === "Quantity");
       const qtyInput = qtyLabel ? (_a = qtyLabel.closest("div")) == null ? void 0 : _a.querySelector("input") : null;
-      if (qtyInput) {
-        const currentQty = ((_b = window.__ha_selected_item) == null ? void 0 : _b.quantity) || ((_c = window.__ha_selected_item) == null ? void 0 : _c.qty) || 1;
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-        setter.call(qtyInput, String(currentQty));
-        qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
-        qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
-      }
+      setTimeout(() => {
+        if (qtyInput && (!qtyInput.value || parseFloat(qtyInput.value) < 1)) {
+          const qty = String(window.__ha_selected_qty || 1);
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+          setter.call(qtyInput, qty);
+          qtyInput.dispatchEvent(new Event("input", { bubbles: true }));
+          qtyInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }, 300);
       const section = document.createElement("div");
       section.className = "ha-discount-section";
       section.style.cssText = "margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;";
@@ -301,7 +308,8 @@
         <span id="ha-disc-badge" style="display:none;font-size:0.7rem;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;font-weight:500;margin-left:auto;"></span>
       </div>
       <div id="ha-disc-no-rule" style="display:none;font-size:0.8rem;color:#9ca3af;font-style:italic;">No discount available for this item.</div>
-      <div id="ha-disc-rule-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;line-height:1.6;"></div>
+      <div id="ha-disc-rule-info" style="display:none;font-size:0.75rem;color:#0369a1;background:#e0f2fe;padding:6px 10px;border-radius:4px;margin-top:6px;line-height:1.8;"></div>
+      <div id="ha-disc-qty-err" style="display:none;font-size:0.8rem;color:#dc2626;padding:6px 10px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;margin-top:6px;"></div>
       <div id="ha-disc-pin-area" style="display:none;margin-top:10px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;">
         <div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;font-weight:500;">Enter supervisor PIN:</div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -316,13 +324,13 @@
         <div id="ha-pin-err" style="font-size:0.75rem;color:#dc2626;margin-top:6px;display:none;"></div>
       </div>
       <div id="ha-disc-fields" style="display:none;margin-top:10px;">
-        <div id="ha-disc-auto-applied" style="padding:10px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin-bottom:10px;display:none;">
-          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:4px;">\u2713 Discount Applied (from pricing rule)</div>
+        <div id="ha-disc-auto-applied" style="padding:10px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin-bottom:10px;">
+          <div style="font-size:0.8rem;color:#059669;font-weight:600;margin-bottom:4px;">\u2713 Discount Applied (pricing rule)</div>
           <div id="ha-disc-auto-info" style="font-size:0.85rem;color:#374151;"></div>
         </div>
         <div style="margin-bottom:8px;">
-          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">Adjust discount (enter new price or leave as applied):</label>
-          <input id="ha-disc-adjust" type="number" step="0.01" min="0" placeholder="New price"
+          <label style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;display:block;">Adjust price (within allowed range):</label>
+          <input id="ha-disc-adjust" type="number" step="0.01" min="0" placeholder="Enter new price"
             style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:8px 10px;font-size:0.875rem;box-sizing:border-box;background:#fff;"/>
           <div id="ha-disc-adjust-hint" style="font-size:0.72rem;color:#6b7280;margin-top:3px;"></div>
         </div>
@@ -334,13 +342,13 @@
       const noRule = section.querySelector("#ha-disc-no-rule");
       const ruleInfo = section.querySelector("#ha-disc-rule-info");
       const badge = section.querySelector("#ha-disc-badge");
+      const qtyErr = section.querySelector("#ha-disc-qty-err");
       const pinArea = section.querySelector("#ha-disc-pin-area");
       const pinInput = section.querySelector("#ha-pin-input");
       const pinOk = section.querySelector("#ha-pin-ok");
       const pinCancel = section.querySelector("#ha-pin-cancel");
       const pinErr = section.querySelector("#ha-pin-err");
       const fields = section.querySelector("#ha-disc-fields");
-      const autoApplied = section.querySelector("#ha-disc-auto-applied");
       const autoInfo = section.querySelector("#ha-disc-auto-info");
       const adjustInput = section.querySelector("#ha-disc-adjust");
       const adjustHint = section.querySelector("#ha-disc-adjust-hint");
@@ -348,8 +356,27 @@
       const adjustErr = section.querySelector("#ha-disc-adjust-err");
       let pinApproved = false;
       let ruleData = null;
+      let originalPrice = 0;
+      let discountApplied = false;
       function getBase() {
-        return parseFloat((priceInput == null ? void 0 : priceInput.value) || 0);
+        return originalPrice || parseFloat((priceInput == null ? void 0 : priceInput.value) || 0);
+      }
+      function getCurrentQty() {
+        const itemName = window.__ha_selected_item_code || window.__ha_last_dialog_title || "";
+        if (itemName) {
+          const menuItems = [...document.querySelectorAll(".menu-item.cursor-pointer")];
+          for (const el of menuItems) {
+            const txt = el.textContent.trim();
+            const cardHeader = el.querySelector("[class*='card-header']");
+            const headerTxt = cardHeader ? cardHeader.textContent.trim() : txt;
+            if (headerTxt.startsWith(itemName) || txt.startsWith(itemName)) {
+              const match = headerTxt.match(/(\d+)$/);
+              if (match)
+                return parseFloat(match[1]);
+            }
+          }
+        }
+        return window.__ha_dialog_qty || 1;
       }
       function applyToReact(val) {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
@@ -357,93 +384,120 @@
         priceInput.dispatchEvent(new Event("input", { bubbles: true }));
         priceInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
+      function validateQty() {
+        if (!ruleData)
+          return true;
+        const qty = getCurrentQty();
+        if (ruleData.min_qty > 0 && qty < ruleData.min_qty) {
+          qtyErr.textContent = `\u26A0 Discount requires min quantity of ${ruleData.min_qty}. Current: ${qty}`;
+          qtyErr.style.display = "block";
+          return false;
+        }
+        if (ruleData.max_qty > 0 && qty > ruleData.max_qty) {
+          qtyErr.textContent = `\u26A0 Discount only applies to max quantity of ${ruleData.max_qty}. Current: ${qty}`;
+          qtyErr.style.display = "block";
+          return false;
+        }
+        qtyErr.style.display = "none";
+        return true;
+      }
       function applyRuleDiscount() {
         if (!ruleData)
           return;
-        const base = getBase();
+        if (!validateQty()) {
+          applyToReact(originalPrice);
+          return;
+        }
+        const base = originalPrice;
         let newPrice = base;
         let info = "";
         if (ruleData.rate_or_discount === "Discount Amount" && ruleData.discount_amount > 0) {
           newPrice = base - ruleData.discount_amount;
-          info = `${ruleData.discount_amount} off \u2192 New price: ${newPrice.toFixed(2)}`;
-        } else if (ruleData.discount_value > 0) {
+          info = `${ruleData.discount_amount} amount off \u2192 New price: ${newPrice.toFixed(2)}`;
+        } else {
           newPrice = base - ruleData.discount_value / 100 * base;
           info = `${ruleData.discount_value}% off \u2192 New price: ${newPrice.toFixed(2)} (save ${(ruleData.discount_value / 100 * base).toFixed(2)})`;
         }
         if (newPrice < 0)
           newPrice = 0;
         autoInfo.textContent = info;
-        autoApplied.style.display = "block";
         applyToReact(newPrice);
-        const minPrice = ruleData.max_discount > 0 ? base - ruleData.max_discount / 100 * base : 0;
-        const maxPrice = base;
-        adjustHint.textContent = `Allowed price range: ${minPrice.toFixed(2)} \u2013 ${maxPrice.toFixed(2)}`;
+        const minPrice = ruleData.max_discount > 0 ? base - ruleData.max_discount / 100 * base : newPrice;
+        adjustHint.textContent = `Allowed: ${minPrice.toFixed(2)} \u2013 ${base.toFixed(2)}`;
         adjustInput.placeholder = newPrice.toFixed(2);
+        discountApplied = true;
+      }
+      if (qtyInput) {
+        qtyInput.addEventListener("input", () => {
+          if (discountApplied) {
+            validateQty();
+            applyRuleDiscount();
+          }
+          if (adjustInput.value)
+            adjustInput.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        qtyInput.addEventListener("change", () => {
+          if (discountApplied) {
+            validateQty();
+            applyRuleDiscount();
+          }
+        });
       }
       adjustInput.addEventListener("input", () => {
-        const base = getBase();
+        const base = originalPrice;
         const newP = parseFloat(adjustInput.value);
         adjustErr.style.display = "none";
         adjustOk.style.display = "none";
         if (isNaN(newP) || adjustInput.value === "")
           return;
-        const maxDisc = (ruleData == null ? void 0 : ruleData.max_discount) || 100;
-        const minDisc = (ruleData == null ? void 0 : ruleData.min_discount) || 0;
-        const minPrice = base - maxDisc / 100 * base;
-        const maxPrice = minDisc > 0 ? base - minDisc / 100 * base : base;
-        const pctApplied = (base - newP) / base * 100;
-        const qty = parseFloat((qtyInput == null ? void 0 : qtyInput.value) || 1);
+        const qty = getCurrentQty();
         if ((ruleData == null ? void 0 : ruleData.min_qty) > 0 && qty < ruleData.min_qty) {
-          adjustErr.textContent = `\u26A0 Min quantity is ${ruleData.min_qty} for this discount.`;
+          adjustErr.textContent = `\u26A0 Min qty is ${ruleData.min_qty}. Current qty: ${qty}`;
           adjustErr.style.display = "block";
-          applyRuleDiscount();
+          applyToReact(base);
           return;
         }
         if ((ruleData == null ? void 0 : ruleData.max_qty) > 0 && qty > ruleData.max_qty) {
-          adjustErr.textContent = `\u26A0 Max quantity is ${ruleData.max_qty} for this discount.`;
+          adjustErr.textContent = `\u26A0 Max qty is ${ruleData.max_qty}. Current qty: ${qty}`;
           adjustErr.style.display = "block";
-          applyRuleDiscount();
+          applyToReact(base);
           return;
         }
         if ((ruleData == null ? void 0 : ruleData.min_amt) > 0 && newP < ruleData.min_amt) {
-          adjustErr.textContent = `\u26A0 Min price is ${ruleData.min_amt}. Restored.`;
+          adjustErr.textContent = `\u26A0 Min price is ${ruleData.min_amt}.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
         if ((ruleData == null ? void 0 : ruleData.max_amt) > 0 && newP > ruleData.max_amt) {
-          adjustErr.textContent = `\u26A0 Max price is ${ruleData.max_amt}. Restored.`;
+          adjustErr.textContent = `\u26A0 Max price is ${ruleData.max_amt}.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
-        if (pctApplied > maxDisc) {
+        const maxDisc = (ruleData == null ? void 0 : ruleData.max_discount) || 100;
+        const minDisc = (ruleData == null ? void 0 : ruleData.min_discount) || 0;
+        const minPrice = base - maxDisc / 100 * base;
+        const pct = (base - newP) / base * 100;
+        if (newP < minPrice || pct > maxDisc) {
           adjustErr.textContent = `\u26A0 Max discount is ${maxDisc}%. Min price: ${minPrice.toFixed(2)}. Restored.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
-        if (minDisc > 0 && pctApplied < minDisc && newP < base) {
-          adjustErr.textContent = `\u26A0 Min discount is ${minDisc}%. Max price: ${maxPrice.toFixed(2)}. Restored.`;
-          adjustErr.style.display = "block";
-          applyRuleDiscount();
-          return;
-        }
         if (newP > base) {
-          adjustErr.textContent = `\u26A0 Cannot exceed original price ${base.toFixed(2)}. Restored.`;
+          adjustErr.textContent = `\u26A0 Cannot exceed original ${base.toFixed(2)}.`;
           adjustErr.style.display = "block";
           applyRuleDiscount();
           return;
         }
-        const pct = (base - newP) / base * 100;
-        adjustOk.textContent = `\u2713 New price: ${newP.toFixed(2)} (${pct.toFixed(1)}% discount)`;
+        adjustOk.textContent = `\u2713 New price: ${newP.toFixed(2)} (${pct.toFixed(1)}% off)`;
         adjustOk.style.display = "block";
         applyToReact(newP);
       });
       adjustInput.addEventListener("keydown", (e) => e.stopPropagation());
       adjustInput.addEventListener("keyup", (e) => e.stopPropagation());
       async function doApprove() {
-        var _a2;
         const pin = pinInput.value.trim();
         if (!pin) {
           pinInput.focus();
@@ -454,12 +508,19 @@
         pinErr.style.display = "none";
         const res = await apiFetch("discount.api.validate_supervisor_pin", { pin });
         if (res == null ? void 0 : res.valid) {
+          if (!validateQty()) {
+            pinOk.textContent = "Approve";
+            pinOk.disabled = false;
+            pinInput.value = "";
+            return;
+          }
           pinApproved = true;
           pinArea.style.display = "none";
           chk.checked = true;
+          chk.disabled = true;
+          chk.title = "Discount already applied";
           fields.style.display = "block";
           pinInput.value = "";
-          window.__ha_discount_applied_to = (_a2 = window.__ha_selected_item) == null ? void 0 : _a2.name;
           applyRuleDiscount();
         } else {
           pinErr.textContent = (res == null ? void 0 : res.message) || "Invalid PIN.";
@@ -486,21 +547,16 @@
       });
       pinInput.addEventListener("keyup", (e) => e.stopPropagation());
       chk.addEventListener("change", () => {
-        var _a2, _b2;
         if (!chk.checked) {
           pinArea.style.display = "none";
           fields.style.display = "none";
           pinApproved = false;
           pinInput.value = "";
-          if (ruleData) {
-            const base = ((_a2 = window.__ha_selected_item) == null ? void 0 : _a2.price) || ((_b2 = window.__ha_selected_item) == null ? void 0 : _b2.standard_rate) || getBase();
-            applyToReact(parseFloat(base));
-          }
+          applyToReact(originalPrice);
           return;
         }
         if (pinApproved) {
           fields.style.display = "block";
-          applyRuleDiscount();
           return;
         }
         chk.checked = false;
@@ -520,30 +576,66 @@
           return;
         }
         ruleData = res;
+        originalPrice = getBase();
         if (res.rule_name) {
           badge.textContent = res.rule_name;
           badge.style.display = "inline";
         }
-        let info = [];
+        const infoLines = [];
         if (res.rate_or_discount === "Discount Amount") {
-          info.push(`Discount: ${res.discount_amount} off`);
+          infoLines.push(`Discount: ${res.discount_amount} amount off`);
+          if (res.max_discount > 0) {
+            infoLines.push(`&nbsp;&nbsp;\u21B3 Max allowed: ${res.max_discount}% off`);
+          }
         } else {
-          info.push(`Discount: ${res.discount_value}%`);
+          infoLines.push(`Discount: ${res.discount_value}%`);
+          if (res.max_discount > 0) {
+            infoLines.push(`&nbsp;&nbsp;\u21B3 Max allowed: ${res.max_discount}% off`);
+          }
         }
-        if (res.max_discount > 0)
-          info.push(`Max: ${res.max_discount}%`);
-        if (res.min_qty > 0)
-          info.push(`Min qty: ${res.min_qty}`);
-        if (res.max_qty > 0)
-          info.push(`Max qty: ${res.max_qty}`);
-        if (res.min_amt > 0)
-          info.push(`Min amount: ${res.min_amt}`);
-        if (res.max_amt > 0)
-          info.push(`Max amount: ${res.max_amt}`);
-        ruleInfo.textContent = info.join(" | ");
+        if (res.min_qty > 0 || res.max_qty > 0) {
+          infoLines.push(`Qty range: ${res.min_qty || 0} \u2013 ${res.max_qty > 0 ? res.max_qty : "\u221E"}`);
+        }
+        if (res.min_amt > 0 || res.max_amt > 0) {
+          infoLines.push(`Amount range: ${res.min_amt || 0} \u2013 ${res.max_amt > 0 ? res.max_amt : "\u221E"}`);
+        }
+        ruleInfo.innerHTML = infoLines.join("<br/>");
         ruleInfo.style.display = "block";
+        validateQty();
       }
-      loadRule();
+      let lastQty = 0;
+      const qtyPollTimer = setInterval(() => {
+        const cur = parseFloat(qtyInput == null ? void 0 : qtyInput.value) || 0;
+        if (cur !== lastQty && cur > 0) {
+          lastQty = cur;
+          window.__ha_dialog_qty = cur;
+          if (discountApplied) {
+            validateQty();
+            applyRuleDiscount();
+          } else if (ruleData) {
+            validateQty();
+          }
+        }
+      }, 300);
+      setTimeout(() => {
+        const numpad = document.querySelector(".update-cart-keyboard-box");
+        if (numpad) {
+          numpad.addEventListener("click", () => {
+            setTimeout(() => {
+              const cur = parseFloat(qtyInput == null ? void 0 : qtyInput.value) || 0;
+              if (cur > 0) {
+                window.__ha_dialog_qty = cur;
+                if (discountApplied) {
+                  validateQty();
+                  applyRuleDiscount();
+                } else if (ruleData)
+                  validateQty();
+              }
+            }, 80);
+          });
+        }
+      }, 300);
+      setTimeout(loadRule, 600);
     }
     function watchForDialog() {
       if (!settings.allow_discount)
@@ -559,17 +651,21 @@
         const pl = [...dialog.querySelectorAll("label")].find((l) => l.textContent.trim() === "Price");
         if (!pl)
           return;
-        const heading = dialog.querySelector("[data-slot='dialog-title'], h2, .text-lg.font-semibold, .font-semibold");
+        const heading = dialog.querySelector("[data-slot='dialog-title'], h2");
         if (heading) {
           const itemName = heading.textContent.trim();
-          if (itemName)
+          if (itemName && itemName !== window.__ha_last_dialog_title) {
+            window.__ha_last_dialog_title = itemName;
             window.__ha_selected_item_code = itemName;
-        }
-        if (window.__ha_selected_item) {
-          window.__ha_selected_item_code = window.__ha_selected_item.item_code || window.__ha_selected_item.name || window.__ha_selected_item_code;
-          if (window.__ha_last_item_name !== window.__ha_selected_item.name) {
-            window.__ha_last_item_name = window.__ha_selected_item.name;
-            window.__ha_discount_applied_to = null;
+            window.__ha_selected_qty = 1;
+            setTimeout(() => {
+              var _a2;
+              const qtyLbl = [...dialog.querySelectorAll("label")].find((l) => l.textContent.trim() === "Quantity");
+              const qtyInp = qtyLbl ? (_a2 = qtyLbl.closest("div")) == null ? void 0 : _a2.querySelector("input") : null;
+              if (qtyInp && qtyInp.value) {
+                window.__ha_selected_qty = parseFloat(qtyInp.value) || 1;
+              }
+            }, 200);
           }
         }
         injectDiscountIntoDialog(dialog);
@@ -577,13 +673,14 @@
       observer.observe(document.body, { childList: true, subtree: true });
       window.addEventListener("ha:cart-dialog-open", (e) => {
         var _a;
-        if ((_a = e.detail) == null ? void 0 : _a.item)
+        if ((_a = e.detail) == null ? void 0 : _a.item) {
           window.__ha_selected_item_code = e.detail.item.item_code || e.detail.item.name || "";
+          window.__ha_selected_item = e.detail.item;
+        }
       });
       window.addEventListener("ha:cart-dialog-close", () => {
         document.querySelectorAll(".ha-discount-section").forEach((el) => el.remove());
       });
-      window.__ha_discount_applied_to = null;
     }
     function watchRoutes() {
       let last = location.pathname;
@@ -597,33 +694,140 @@
         }
       }, 300);
     }
+    function injectLaybyReceiptBtn() {
+      if (!window.location.pathname.includes("/sales-order/"))
+        return;
+      if (document.getElementById("ha-layby-dl-btn"))
+        return;
+      const ca = document.querySelector(".custom-actions");
+      if (!ca)
+        return;
+      const btn = document.createElement("button");
+      btn.id = "ha-layby-dl-btn";
+      btn.className = "btn btn-warning";
+      btn.textContent = "Download Layby Receipt";
+      btn.style.cssText = "margin-left:8px;font-weight:bold;";
+      btn.onclick = () => {
+        const frm = window.cur_frm;
+        if (!frm)
+          return;
+        const items = frm.doc.items || [];
+        const lines = [
+          "=============================",
+          "         LAYBY RECEIPT       ",
+          "=============================",
+          "Order     : " + frm.doc.name,
+          "Date      : " + frm.doc.transaction_date,
+          "Customer  : " + (frm.doc.customer_name || frm.doc.customer || "Walk-in"),
+          "-----------------------------",
+          "ITEMS:"
+        ];
+        items.forEach((i) => lines.push("  " + i.item_name + " x" + i.qty + "  @  " + i.rate + "  =  " + i.amount));
+        lines.push("-----------------------------");
+        lines.push("TOTAL     : " + frm.doc.currency + " " + frm.doc.grand_total);
+        lines.push("=============================");
+        lines.push("  Thank you for your Layby!  ");
+        lines.push("  Please keep this receipt.  ");
+        lines.push("=============================");
+        const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Layby-" + frm.doc.name + ".txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        frappe.show_alert({ message: "Receipt downloaded! Redirecting...", indicator: "green" }, 3);
+        setTimeout(() => {
+          if (window.opener)
+            window.close();
+          else
+            window.location.href = "/dashboard";
+        }, 2500);
+      };
+      ca.appendChild(btn);
+    }
+    function watchSalesOrderPage() {
+      if (!window.location.pathname.includes("/sales-order/"))
+        return;
+      [500, 1e3, 2e3, 3e3].forEach((t) => setTimeout(injectLaybyReceiptBtn, t));
+      const observer = new MutationObserver(() => injectLaybyReceiptBtn());
+      const pageHead = document.querySelector(".page-head");
+      if (pageHead)
+        observer.observe(pageHead, { childList: true, subtree: true });
+    }
     function readCartStoreItem() {
-      var _a, _b, _c;
-      try {
-        const root = document.getElementById("root");
-        if (!root)
+    }
+    function watchSalesOrderPageEarly() {
+      function injectBtn() {
+        if (document.getElementById("ha-layby-dl-btn"))
           return;
-        const fiberKey = Object.keys(root).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
-        if (!fiberKey)
+        const target = document.querySelector(".custom-actions");
+        if (!target)
           return;
-        let fiber = root[fiberKey];
-        let depth = 0;
-        while (fiber && depth < 200) {
-          if ((_c = (_b = (_a = fiber.memoizedState) == null ? void 0 : _a.queue) == null ? void 0 : _b.lastRenderedState) == null ? void 0 : _c.selectedCartItem) {
-            const item = fiber.memoizedState.queue.lastRenderedState.selectedCartItem;
-            if (item) {
-              window.__ha_selected_item = item;
-              window.__ha_selected_item_code = item.item_code || item.name || "";
-            }
-            break;
-          }
-          fiber = fiber.child || fiber.sibling || fiber.return;
-          depth++;
-        }
-      } catch (e) {
+        const frm = window.cur_frm;
+        if (!frm || frm.doc.docstatus !== 1)
+          return;
+        const btn = document.createElement("button");
+        btn.id = "ha-layby-dl-btn";
+        btn.className = "btn btn-warning";
+        btn.textContent = "Download Layby Receipt";
+        btn.style.cssText = "margin-left:8px;font-weight:bold;";
+        btn.onclick = function() {
+          const items = frm.doc.items || [];
+          const lines = [
+            "=============================",
+            "         LAYBY RECEIPT       ",
+            "=============================",
+            "Order     : " + frm.doc.name,
+            "Date      : " + frm.doc.transaction_date,
+            "Customer  : " + (frm.doc.customer_name || frm.doc.customer || "Walk-in"),
+            "-----------------------------",
+            "ITEMS:"
+          ];
+          items.forEach(function(i) {
+            lines.push("  " + i.item_name + " x" + i.qty + "  @  " + i.rate + "  =  " + i.amount);
+          });
+          lines.push("-----------------------------");
+          lines.push("TOTAL     : " + frm.doc.currency + " " + frm.doc.grand_total);
+          lines.push("=============================");
+          lines.push("  Thank you for your Layby!  ");
+          lines.push("  Please keep this receipt.  ");
+          lines.push("=============================");
+          const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "Layby-" + frm.doc.name + ".txt";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          frappe.show_alert({ message: "Receipt downloaded! Redirecting...", indicator: "green" }, 3);
+          setTimeout(function() {
+            if (window.opener)
+              window.close();
+            else
+              window.location.href = "/dashboard";
+          }, 2500);
+        };
+        target.appendChild(btn);
       }
+      [500, 1e3, 2e3, 3e3].forEach(function(t) {
+        setTimeout(injectBtn, t);
+      });
+      setTimeout(function() {
+        const ph = document.querySelector(".page-head");
+        if (ph)
+          new MutationObserver(injectBtn).observe(ph, { childList: true, subtree: true });
+      }, 500);
     }
     async function boot() {
+      if (isSalesOrder) {
+        watchSalesOrderPageEarly();
+        return;
+      }
       await getSettings();
       console.log("[Discount App] Settings loaded:", settings);
       setInterval(readCartStoreItem, 500);
@@ -633,6 +837,7 @@
           injectReceiptButton();
           watchForDialog();
           watchRoutes();
+          watchSalesOrderPage();
         }, 1500);
       });
     }
@@ -643,4 +848,4 @@
     }
   })();
 })();
-//# sourceMappingURL=discount.bundle.UQM3QVKQ.js.map
+//# sourceMappingURL=discount.bundle.3FLRGDS4.js.map
